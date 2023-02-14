@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "description": "Run WolframScript with Node.js",
   "main": "index.js",
+  "scripts": {
+    "start": "node index"
+  },
   "repository": "git@github.com:butchi/node-wolframscript.git",
   "author": "IWABUCHI Yu(u)ki <butchiyu+com-github@gmail.com>",
   "license": "MIT",
