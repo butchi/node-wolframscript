@@ -14,7 +14,7 @@ let curData = ""
 let inArr = []
 let outArr = []
 
-const outRegExp = /^[\\\r\n\s]*Out\[[0-9]+\]\=\s/
+const outRegExp = /^[\\\r\n\s]*Out\[[0-9]+\](\/\/[a-zA-Z]+)?\=\s/
 const inRegExp = /In\[[0-9]+\]\:\=\s*$/
 const trimRegExp = /[\\\r\n\s]+\>?[\\\r\n\s]{1,4}/g
 
