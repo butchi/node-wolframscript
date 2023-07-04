@@ -21,8 +21,6 @@ const evaluate = async ({ action } = { action: "vector" }) => {
     let cmd = input
 
     if (action == null) {
-    } else if (action === "text") {
-        cmd = input
     } else if (action === "mathml") {
         cmd = `ExportString[${input}, "MathML"]`
     } else if (action === "raster") {
@@ -31,6 +29,8 @@ const evaluate = async ({ action } = { action: "vector" }) => {
         cmd = `ExportString[${input}, {"Base64", "SVG"}]`
     } else if (action === "audio") {
         cmd = `ExportString[${input}, {"Base64", "MP3"}]`
+    } else if (action === "text") {
+        cmd = input
     } else {
     }
 
@@ -72,10 +72,6 @@ globalThis.addEventListener("keydown", async evt => {
     }
 })
 
-document.querySelector(`[data-action="text"]`).addEventListener("click", _ => {
-    evaluate({ action: "text" })
-})
-
 document.querySelector(`[data-action="mathml"]`).addEventListener("click", _ => {
     evaluate({ action: "mathml" })
 })
@@ -90,6 +86,10 @@ document.querySelector(`[data-action="vector"]`).addEventListener("click", _ => 
 
 document.querySelector(`[data-action="audio"]`).addEventListener("click", _ => {
     evaluate({ action: "audio" })
+})
+
+document.querySelector(`[data-action="text"]`).addEventListener("click", _ => {
+    evaluate({ action: "text" })
 })
 
 console.log("Thanks, world!")
