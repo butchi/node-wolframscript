@@ -72,24 +72,12 @@ globalThis.addEventListener("keydown", async evt => {
     }
 })
 
-document.querySelector(`[data-action="mathml"]`).addEventListener("click", _ => {
-    evaluate({ action: "mathml" })
-})
+document.querySelectorAll("[data-box-command] .btn").forEach(elm => {
+    elm.addEventListener("click", _ => {
+        const action = elm.getAttribute("data-action")
 
-document.querySelector(`[data-action="raster"]`).addEventListener("click", _ => {
-    evaluate({ action: "raster" })
-})
-
-document.querySelector(`[data-action="vector"]`).addEventListener("click", _ => {
-    evaluate({ action: "vector" })
-})
-
-document.querySelector(`[data-action="audio"]`).addEventListener("click", _ => {
-    evaluate({ action: "audio" })
-})
-
-document.querySelector(`[data-action="text"]`).addEventListener("click", _ => {
-    evaluate({ action: "text" })
+        evaluate({ action })
+    })
 })
 
 console.log("Thanks, world!")
