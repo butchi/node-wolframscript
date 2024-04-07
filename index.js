@@ -73,11 +73,11 @@ router.get('/wolfram/exec', async ctx => {
 
     inArr.push(cmd)
 
-    ee.emit("input", cmd)
+    ee.emit('input', cmd)
 
     await new Promise((resolve, reject) => {
-        ee.on("message", data => {
-            ee.removeAllListeners("message")
+        ee.on('message', data => {
+            ee.removeAllListeners('message')
 
             outArr.push(data)
 
@@ -87,8 +87,8 @@ router.get('/wolfram/exec', async ctx => {
 
             resolve()
         })
-        ee.on("error", data => {
-            ee.removeAllListeners("error")
+        ee.on('error', data => {
+            ee.removeAllListeners('error')
 
             reject()
         })
