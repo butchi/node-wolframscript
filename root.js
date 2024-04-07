@@ -18,6 +18,10 @@ document.body.appendChild(contentClone)
 const evaluate = async ({ action } = { action: 'vector' }) => {
     const input = inputElm.querySelector('textarea').value
 
+    if (!input?.trim()) {
+        return
+    }
+
     inputElm.querySelector('textarea').disabled = true
 
     let cmd = input
