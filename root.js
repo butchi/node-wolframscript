@@ -25,6 +25,8 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
     if (action == null) {
     } else if (action === 'mathml') {
         cmd = `ExportString[${input}, "MathML"]`
+    } else if (action === 'tex') {
+        cmd = `ExportString[${input}, "TeXFragment"]`
     } else if (action === 'raster') {
         cmd = `ExportString[${input}, {"Base64", "PNG"}]`
     } else if (action === 'vector') {
@@ -48,6 +50,11 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
         outputClone.innerHTML = output
     } else if (action === 'mathml') {
         outputClone.innerHTML = `<p>${output}</p>`
+    } else if (action === 'tex') {
+        katex.render(
+            output.replace(/^\\\[/, '').replace(/\\\]$/, ''),
+            outputClone
+        )
     } else if (action === 'raster') {
         outputClone.innerHTML = `<img src="data:image/png;base64,${output}" alt="output">`
     } else if (action === 'vector') {
