@@ -1,16 +1,16 @@
-const Koa = require("koa")
-const Router = require("koa2-router")
-const fs = require("fs").promises
+const Koa = require('koa')
+const Router = require('koa2-router')
+const fs = require('fs').promises
 const app = new Koa()
-const router = new Router();
+const router = new Router()
 
 app.use(router)
 
 const EventEmitter = require('events')
-const { spawn } = require("child_process")
+const { spawn } = require('child_process')
 
 const ee = new EventEmitter()
-let curData = ""
+let curData = ''
 let inArr = []
 let outArr = []
 
@@ -19,49 +19,52 @@ const inRegExp = /In\[[0-9]+\]\:\=\s*$/
 const trimRegExp = /[\\\r\n\s]+\>?[\\\r\n\s]{1,4}/g
 
 try {
-    const wolframscript = spawn("wolframscript", ["-i"])
+    const wolframscript = spawn('wolframscript', ['-i'])
     wolframscript.stdout.setEncoding('utf8')
 
     wolframscript.stdout.on('data', data => {
-        console.log("data:", data)
+        console.log('data:', data)
 
         if (data.match(outRegExp) && data.match(inRegExp)) {
-            curData = data.replace(outRegExp, "").replace(inRegExp, "").replaceAll(trimRegExp, "")
+            curData = data
+                .replace(outRegExp, '')
+                .replace(inRegExp, '')
+                .replaceAll(trimRegExp, '')
 
-            ee.emit("message", curData)
+            ee.emit('message', curData)
 
-            curData = ""
+            curData = ''
         } else if (data.match(outRegExp)) {
-            curData += data.replace(outRegExp, "").replaceAll(trimRegExp, "")
+            curData += data.replace(outRegExp, '').replaceAll(trimRegExp, '')
         } else if (data.match(inRegExp)) {
-            curData += data.replace(inRegExp, "").replaceAll(trimRegExp, "")
+            curData += data.replace(inRegExp, '').replaceAll(trimRegExp, '')
 
-            ee.emit("message", curData)
+            ee.emit('message', curData)
 
-            curData = ""
+            curData = ''
         } else {
-            curData += data.replaceAll(trimRegExp, "")
+            curData += data.replaceAll(trimRegExp, '')
         }
     })
 
-    ee.on("input", cmd => {
+    ee.on('input', cmd => {
         wolframscript.stdin.write(`${cmd}\n`)
     })
 } catch (err) {
     console.log(err)
 }
 
-router.get("/", async ctx => {
+router.get('/', async ctx => {
     console.log(ctx.method, ctx.url)
-    ctx.body = await fs.readFile("root.html", "utf8")
+    ctx.body = await fs.readFile('root.html', 'utf8')
 })
 
-router.get("/root.js", async ctx => {
+router.get('/root.js', async ctx => {
     console.log(ctx.method, ctx.url)
-    ctx.body = await fs.readFile("root.js", "utf8")
+    ctx.body = await fs.readFile('root.js', 'utf8')
 })
 
-router.get("/wolfram/exec", async ctx => {
+router.get('/wolfram/exec', async ctx => {
     console.log(ctx.method, ctx.url)
 
     let output
