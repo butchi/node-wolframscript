@@ -56,6 +56,11 @@ router.get('/', async (ctx) => {
   ctx.body = await fs.readFile('root.html', 'utf8')
 })
 
+router.get('/favicon.ico', async (ctx) => {
+  console.log(ctx.method, ctx.url)
+  ctx.body = await fs.readFile('favicon.ico')
+})
+
 router.get('/root.js', async (ctx) => {
   console.log(ctx.method, ctx.url)
   ctx.body = await fs.readFile('root.js', 'utf8')
