@@ -53,7 +53,7 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   } else if (action === 'mathml') {
     outputClone.innerHTML = `<p>${output}</p>`
   } else if (action === 'tex') {
-    katex.render(output, outputClone)
+    katex.render(output.trim().slice(2, -2), outputClone)
   } else if (action === 'raster') {
     outputClone.innerHTML = `<img src="data:image/png;base64,${output}" alt="output">`
   } else if (action === 'vector') {

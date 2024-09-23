@@ -16,7 +16,7 @@ let outArr = []
 
 const outRegExp = /^[\\\r\n\s]*Out\[[0-9]+\](\/\/[a-zA-Z]+)?\=\s/
 const inRegExp = /In\[[0-9]+\]\:\=\s*$/
-const trimRegExp = /[\\\r\n\s]+\>?[\\\r\n\s]{4}/g
+const trimRegExp = /[\\\r\n\s]+\>?[\\\r\n\s]+/g
 
 try {
   const wolframscript = spawn('wolframscript', ['-i'])
