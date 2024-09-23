@@ -1,11 +1,12 @@
 # node-wolframscript
+
 Run WolframScript with Node.js
 
 ## run
 
 ```
-yarn
-yarn start
+npm install
+npm run start
 ```
 
 go to page after launch server:
