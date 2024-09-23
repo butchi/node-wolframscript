@@ -1,68 +1,82 @@
 <!DOCTYPE html>
 <html lang="en">
-
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <title>Node WolframScript</title>
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
-        integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css" integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww" crossorigin="anonymous">
-</head>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC"
+      crossorigin="anonymous"
+    />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.0/font/bootstrap-icons.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css"
+      integrity="sha384-wcIxkf4k558AjM3Yz3BBFQUbk/zgIYC2R0QpeeYb+TwlBVMrlgLqwRjRtGZiK7ww"
+      crossorigin="anonymous"
+    />
+  </head>
 
-<body>
+  <body>
     <main>
-        <h1>Node WolframScript</h1>
-        <p>Welcome to Node WolframScript</p>
-        <div class="mb-3">
-            <div id="nb"></div>
-        </div>
-        <div class="mb-3" data-box-command style="text-align: right;">
-            <button class="btn btn-primary mx-1" type="button" data-action="mathml" title="MathML">
-                <i class="bi-file-code-fill"></i>
-            </button>
-            <button class="btn btn-primary mx-1" type="button" data-action="tex" title="TeX">
-                <i class="bi-fonts"></i>
-            </button>
-            <button class="btn btn-primary mx-1" type="button" data-action="raster" title="Raster image">
-                <i class="bi-file-image-fill"></i>
-            </button>
-            <button class="btn btn-primary mx-1" type="button" data-action="vector" title="Vector image">
-                <i class="bi-vector-pen"></i>
-            </button>
-            <button class="btn btn-primary mx-1" type="button" data-action="audio" title="Audio">
-                <i class="bi-soundwave"></i>
-            </button>
-            <button class="btn btn-primary mx-1" type="button" data-action="text" title="Plain text">
-                <i class="bi-file-text-fill"></i>
-            </button>
-        </div>
+      <h1>Node WolframScript</h1>
+      <p>Welcome to Node WolframScript</p>
+      <div class="mb-3">
+        <div id="nb"></div>
+      </div>
+      <div class="mb-3" data-box-command style="text-align: right">
+        <button class="btn btn-primary mx-1" type="button" data-action="mathml" title="MathML">
+          <i class="bi-file-code-fill"></i>
+        </button>
+        <button class="btn btn-primary mx-1" type="button" data-action="tex" title="TeX">
+          <i class="bi-fonts"></i>
+        </button>
+        <button class="btn btn-primary mx-1" type="button" data-action="raster" title="Raster image">
+          <i class="bi-file-image-fill"></i>
+        </button>
+        <button class="btn btn-primary mx-1" type="button" data-action="vector" title="Vector image">
+          <i class="bi-vector-pen"></i>
+        </button>
+        <button class="btn btn-primary mx-1" type="button" data-action="audio" title="Audio">
+          <i class="bi-soundwave"></i>
+        </button>
+        <button class="btn btn-primary mx-1" type="button" data-action="text" title="Plain text">
+          <i class="bi-file-text-fill"></i>
+        </button>
+      </div>
     </main>
     <template id="container">
-        <div class="container mt-3">
-            <div class="row align-items-start">
-                <div class="col" data-slot></div>
-            </div>
+      <div class="container mt-3">
+        <div class="row align-items-start">
+          <div class="col" data-slot></div>
         </div>
+      </div>
     </template>
     <template id="input">
-        <div class="input-group mb-3">
-            <div class="input-group-text">In</div>
-            <textarea class="form-control" aria-label="In textarea"></textarea>
-        </div>
+      <div class="input-group mb-3">
+        <div class="input-group-text">In</div>
+        <textarea class="form-control" aria-label="In textarea"></textarea>
+      </div>
     </template>
     <template id="output">
-        <div class="mb-3"></div>
+      <div class="mb-3"></div>
     </template>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
-        crossorigin="anonymous"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js" integrity="sha384-hIoBPJpTUs74ddyc4bFZSM1TVlQDA60VBbJS0oA934VSz82sBx1X7kSx2ATBDIyd" crossorigin="anonymous"></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"
+      integrity="sha384-hIoBPJpTUs74ddyc4bFZSM1TVlQDA60VBbJS0oA934VSz82sBx1X7kSx2ATBDIyd"
+      crossorigin="anonymous"
+    ></script>
     <script src="root.js"></script>
-</body>
-
+  </body>
 </html>
