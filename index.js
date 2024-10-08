@@ -1,9 +1,11 @@
 const Koa = require('koa')
+const { koaBody } = require('koa-body')
 const Router = require('koa2-router')
 const fs = require('fs').promises
 const app = new Koa()
 const router = new Router()
 
+app.use(koaBody())
 app.use(router)
 
 const EventEmitter = require('events')
@@ -66,12 +68,14 @@ router.get('/root.js', async (ctx) => {
   ctx.body = await fs.readFile('root.js', 'utf8')
 })
 
-router.get('/wolfram/exec', async (ctx) => {
+router.post('/wolfram/exec', async (ctx) => {
   console.log(ctx.method, ctx.url)
 
   let output
 
-  const cmd = ctx.request.query.command
+  const bodyObj = JSON.parse(ctx.request.body)
+
+  const cmd = decodeURIComponent(bodyObj.command)
 
   inArr.push(cmd)
 

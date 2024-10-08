@@ -40,7 +40,12 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   } else {
   }
 
-  const res = await fetch(`/wolfram/exec?command=${encodeURIComponent(cmd)}`)
+  const res = await fetch('/wolfram/exec', {
+    method: 'post',
+    body: JSON.stringify({
+      command: encodeURIComponent(cmd)
+    })
+  })
 
   const output = await res.text()
 
