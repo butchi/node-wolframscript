@@ -28,7 +28,10 @@ try {
     console.log('data:', data)
 
     if (data.match(outRegExp) && data.match(inRegExp)) {
-      curData = data.replace(outRegExp, '').replace(inRegExp, '').replaceAll(trimRegExp, '')
+      curData = data
+        .replace(outRegExp, '')
+        .replace(inRegExp, '')
+        .replaceAll(trimRegExp, '')
 
       ee.emit('message', curData)
 

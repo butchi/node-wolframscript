@@ -9,7 +9,9 @@ let outputTmpl = document.querySelector('#output')
 let inputClone = inputTmpl.content.firstElementChild.cloneNode(true)
 let inputElm = nbElm.appendChild(inputClone)
 
-const contentClone = document.querySelector('#container').content.firstElementChild.cloneNode(true)
+const contentClone = document
+  .querySelector('#container')
+  .content.firstElementChild.cloneNode(true)
 contentClone.querySelector('[data-slot]').appendChild(mainElm)
 document.body.appendChild(contentClone)
 
