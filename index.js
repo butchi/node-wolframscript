@@ -1,15 +1,15 @@
-const Koa = require('koa')
-const { koaBody } = require('koa-body')
-const Router = require('koa2-router')
-const fs = require('fs').promises
+import Koa from 'koa'
+import { koaBody } from 'koa-body'
+import Router from 'koa2-router'
+import { promises as fs } from 'fs'
+import EventEmitter from 'events'
+import { spawn } from 'child_process'
+
 const app = new Koa()
 const router = new Router()
 
 app.use(koaBody())
 app.use(router)
-
-const EventEmitter = require('events')
-const { spawn } = require('child_process')
 
 const ee = new EventEmitter()
 let curData = ''
@@ -58,16 +58,19 @@ try {
 
 router.get('/', async (ctx) => {
   console.log(ctx.method, ctx.url)
+  ctx.type = 'text/html'
   ctx.body = await fs.readFile('root.html', 'utf8')
 })
 
 router.get('/favicon.ico', async (ctx) => {
   console.log(ctx.method, ctx.url)
+  ctx.type = 'image/x-icon'
   ctx.body = await fs.readFile('favicon.ico')
 })
 
 router.get('/root.js', async (ctx) => {
   console.log(ctx.method, ctx.url)
+  ctx.type = 'text/javascript'
   ctx.body = await fs.readFile('root.js', 'utf8')
 })
 

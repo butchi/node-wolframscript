@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "Run WolframScript with Node.js",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index"
   },
