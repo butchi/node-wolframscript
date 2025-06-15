@@ -53,7 +53,6 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
 
   console.log(output)
 
-  outputClone = outputTmpl.content.firstElementChild.cloneNode(true)
 
   if (action == null) {
     outputClone.innerHTML = output
@@ -70,6 +69,7 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   } else {
     outputClone.innerHTML = output
   }
+  const outputClone = outputTmpl.content.firstElementChild.cloneNode(true)
 
   nbElm.appendChild(outputClone)
 
