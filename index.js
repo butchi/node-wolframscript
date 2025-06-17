@@ -74,6 +74,12 @@ router.get('/root.js', async (ctx) => {
   ctx.body = await fs.readFile('root.js', 'utf8')
 })
 
+router.get('/func.js', async (ctx) => {
+  console.log(ctx.method, ctx.url)
+  ctx.type = 'text/javascript'
+  ctx.body = await fs.readFile('func.js', 'utf8')
+})
+
 router.post('/wolfram/exec', async (ctx) => {
   console.log(ctx.method, ctx.url)
 
