@@ -45,6 +45,7 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   const input = inputElm.querySelector('textarea').value
   if (!input?.trim()) return
   inputElm.querySelector('textarea').disabled = true
+  console.log('Action:', action)
   console.log('Input:', input)
 
   let obj,
@@ -67,6 +68,8 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   // 入力タイプ判定
   const type = detectInputType(input)
   const trimmed = input.trim()
+
+  console.log('Detected input type:', type)
 
   switch (type) {
     case 'json':
