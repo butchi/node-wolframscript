@@ -109,13 +109,14 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
     case 'texblock':
       texFragment = trimmed.slice(3, -3).trim()
       break
-    case 'matra':
-      jsStr = trimmed
-        .replace(/^```[a-zA-Z0-9]*\n/, '')
-        .replace(/\n```$/, '')
-        .trim()
-      obj = eval(`(${jsStr})`)
-      break
+    // // STUB
+    // case 'matra':
+    //   jsStr = trimmed
+    //     .replace(/^```[a-zA-Z0-9]*\n/, '')
+    //     .replace(/\n```$/, '')
+    //     .trim()
+    //   obj = eval(`(${jsStr})`)
+    //   break
     default:
       console.log('Invalid input format, expected JSON, JavaScript, or TeX Fragment')
   }
