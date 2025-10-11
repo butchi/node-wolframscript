@@ -15,6 +15,11 @@ const contentClone = document.querySelector('#container').content.firstElementCh
 contentClone.querySelector('[data-slot]').appendChild(mainElm)
 document.body.appendChild(contentClone)
 
+// for debug
+Object.keys(func).forEach((key) => {
+  globalThis[key] = func[key]
+})
+
 // 入力タイプ判定関数
 function detectInputType(input) {
   const trimmed = input.trim()
@@ -40,9 +45,6 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   const input = inputElm.querySelector('textarea').value
   if (!input?.trim()) return
   inputElm.querySelector('textarea').disabled = true
-  Object.keys(func).forEach((key) => {
-    globalThis[key] = func[key]
-  })
   console.log('Input:', input)
 
   let obj,
