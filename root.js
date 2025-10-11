@@ -71,7 +71,12 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   switch (type) {
     case 'json':
       try {
-        jsonObj = JSON.parse(trimmed)
+        const str = trimmed
+          .replace(/^```[a-zA-Z0-9]*\n/, '')
+          .replace(/\n```$/, '')
+          .replace(/^[a-zA-Z0-9]+`|`$/g, '')
+          .trim()
+        jsonObj = JSON.parse(str)
         try {
           exprJsonObj = JSON.parse(jsonObj)
           obj = exprJsonObj
