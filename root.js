@@ -11,9 +11,7 @@ let outputTmpl = document.querySelector('#output')
 let inputClone = inputTmpl.content.firstElementChild.cloneNode(true)
 let inputElm = nbElm.appendChild(inputClone)
 
-const contentClone = document
-  .querySelector('#container')
-  .content.firstElementChild.cloneNode(true)
+const contentClone = document.querySelector('#container').content.firstElementChild.cloneNode(true)
 contentClone.querySelector('[data-slot]').appendChild(mainElm)
 document.body.appendChild(contentClone)
 
@@ -42,10 +40,14 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   const input = inputElm.querySelector('textarea').value
   if (!input?.trim()) return
   inputElm.querySelector('textarea').disabled = true
-  Object.keys(func).forEach((key) => { globalThis[key] = func[key] })
+  Object.keys(func).forEach((key) => {
+    globalThis[key] = func[key]
+  })
   console.log('Input:', input)
 
-  let obj, exprStr = '', cmd = ''
+  let obj,
+    exprStr = '',
+    cmd = ''
   let jsonStr, jsStr, texFragment, wolframStr
   let jsonObj, exprJsonObj
 
@@ -71,19 +73,31 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
         try {
           exprJsonObj = JSON.parse(jsonObj)
           obj = exprJsonObj
-        } catch { obj = jsonObj }
+        } catch {
+          obj = jsonObj
+        }
         jsonStr = JSON.stringify(obj)
         console.log('Parsed JSON:', obj)
-      } catch { console.info('input is not JSON') }
+      } catch {
+        console.info('input is not JSON')
+      }
       break
     case 'js':
-      jsStr = trimmed.replace(/^```[a-zA-Z0-9]*\n/, '').replace(/\n```$/, '').replace(/^`|`$/g, '').trim()
+      jsStr = trimmed
+        .replace(/^```[a-zA-Z0-9]*\n/, '')
+        .replace(/\n```$/, '')
+        .replace(/^`|`$/g, '')
+        .trim()
       obj = eval(`(${jsStr})`)
       console.log('JavaScript String:', jsStr)
       break
     case 'wolfram':
     case 'wl':
-      wolframStr = trimmed.replace(/^```[a-zA-Z0-9]*\n/, '').replace(/\n```$/, '').replace(/^[a-zA-Z0-9]+`|`$/g, '').trim()
+      wolframStr = trimmed
+        .replace(/^```[a-zA-Z0-9]*\n/, '')
+        .replace(/\n```$/, '')
+        .replace(/^[a-zA-Z0-9]+`|`$/g, '')
+        .trim()
       exprStr = wolframStr
       console.log('Wolfram String:', wolframStr)
       break
@@ -94,7 +108,10 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
       texFragment = trimmed.slice(3, -3).trim()
       break
     case 'matra':
-      jsStr = trimmed.replace(/^```[a-zA-Z0-9]*\n/, '').replace(/\n```$/, '').trim()
+      jsStr = trimmed
+        .replace(/^```[a-zA-Z0-9]*\n/, '')
+        .replace(/\n```$/, '')
+        .trim()
       obj = eval(`(${jsStr})`)
       break
     default:
@@ -121,7 +138,7 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
       raster: `ExportString[${exprStr}, {"Base64", "PNG"}]`,
       vector: `ExportString[${exprStr}, {"Base64", "SVG"}]`,
       audio: `ExportString[${exprStr}, {"Base64", "MP3"}]`,
-      text: exprStr
+      text: exprStr,
     }
     cmd = actionMap[action] ?? cmd
   }
@@ -129,7 +146,7 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   console.log('Command:', cmd)
   const res = await fetch('/wolfram/exec', {
     method: 'post',
-    body: JSON.stringify({ command: encodeURIComponent(cmd) })
+    body: JSON.stringify({ command: encodeURIComponent(cmd) }),
   })
   const output = await res.text()
   console.log(output)

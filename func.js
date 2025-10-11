@@ -1,9 +1,9 @@
 export const operate = (head) => {
   return (...body) => {
-    return ({
+    return {
       head,
       body: [...body],
-    })
+    }
   }
 }
 
@@ -127,6 +127,7 @@ export const rest = operate('Rest')
 export const most = operate('Most')
 export const position = operate('Position')
 export const keySort = operate('KeySort')
+export const range = operate('Range')
 
 export const simplify = operate('Simplify')
 export const fullSimplify = operate('FullSimplify')
