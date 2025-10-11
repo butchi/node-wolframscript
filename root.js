@@ -88,7 +88,7 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
       jsStr = trimmed
         .replace(/^```[a-zA-Z0-9]*\n/, '')
         .replace(/\n```$/, '')
-        .replace(/^`|`$/g, '')
+        .replace(/^[a-zA-Z0-9]+`|`$/g, '')
         .trim()
       obj = eval(`(${jsStr})`)
       console.log('JavaScript String:', jsStr)
