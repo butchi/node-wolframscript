@@ -322,94 +322,129 @@ const evaluate = async ({ action }: { action?: Action } = {}) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ command: encodeURIComponent(cmd) }),
   })
-  const output = await res.text()
+  // Choose response reader based on Content-Type. If server returns image/audio,
+  // read as Blob and render directly. Otherwise read as text and try data URI/Base64 path.
+  const contentType = res.headers.get('Content-Type') || res.headers.get('content-type') || ''
+  const isBinaryMedia = /^image\//i.test(contentType) || /^audio\//i.test(contentType)
+  const output: Blob | string = isBinaryMedia ? await res.blob() : await res.text()
   console.log(output)
   const outputClone = outputTmpl.content.firstElementChild!.cloneNode(true) as HTMLElement
 
   // 出力処理
   switch (action) {
-    case 'mathml':
-      outputClone.innerHTML = `<p>${output}</p>`
+    case 'mathml': {
+      const text = typeof output === 'string' ? output : await (output as Blob).text()
+      outputClone.innerHTML = `<p>${text}</p>`
       break
-    case 'tex':
+    }
+    case 'tex': {
+      const text = typeof output === 'string' ? output : await (output as Blob).text()
       try {
-        katex.render(output.trim().slice(2, -2), outputClone, { throwOnError: false })
+        katex.render(text.trim().slice(2, -2), outputClone, { throwOnError: false })
       } catch (err) {
-        outputClone.innerHTML = `<pre>${output}</pre>`
+        outputClone.innerHTML = `<pre>${escapeHtml(text)}</pre>`
       }
       break
+    }
     case 'raster': {
-        {
-          const body = (output as string).trim()
-          // If server returned the textual mock, show it instead of attempting to build a data URI
-          if (body.startsWith('MOCK_RESULT:')) {
-            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
-            break
-          }
-
-          const blob = await getBlobFromServerOutput(body, 'image/png')
-          if (blob) {
-            const url = URL.createObjectURL(blob)
-            const img = document.createElement('img')
-            img.alt = 'output'
-            img.src = url
-            img.onload = () => URL.revokeObjectURL(url)
-            outputClone.appendChild(img)
-          } else {
-            // fallback: show raw output
-            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
-          }
+      {
+        if (output instanceof Blob) {
+          const url = URL.createObjectURL(output)
+          const img = document.createElement('img')
+          img.alt = 'output'
+          img.src = url
+          img.onload = () => URL.revokeObjectURL(url)
+          outputClone.appendChild(img)
+          break
         }
+
+        const body = (output as string).trim()
+        if (body.startsWith('MOCK_RESULT:')) {
+          outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+          break
+        }
+        const blob = await getBlobFromServerOutput(body, 'image/png')
+        if (blob) {
+          const url = URL.createObjectURL(blob)
+          const img = document.createElement('img')
+          img.alt = 'output'
+          img.src = url
+          img.onload = () => URL.revokeObjectURL(url)
+          outputClone.appendChild(img)
+        } else {
+          outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+        }
+      }
       break
     }
     case 'vector': {
-        {
-          const body = (output as string).trim()
-          if (body.startsWith('MOCK_RESULT:')) {
-            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
-            break
-          }
-
-          const blob = await getBlobFromServerOutput(body, 'image/svg+xml')
-          if (blob) {
-            const url = URL.createObjectURL(blob)
-            const img = document.createElement('img')
-            img.alt = 'output'
-            img.src = url
-            img.onload = () => URL.revokeObjectURL(url)
-            outputClone.appendChild(img)
-          } else {
-            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
-          }
+      {
+        if (output instanceof Blob) {
+          const url = URL.createObjectURL(output)
+          const img = document.createElement('img')
+          img.alt = 'output'
+          img.src = url
+          img.onload = () => URL.revokeObjectURL(url)
+          outputClone.appendChild(img)
+          break
         }
+        const body = (output as string).trim()
+        if (body.startsWith('MOCK_RESULT:')) {
+          outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+          break
+        }
+        const blob = await getBlobFromServerOutput(body, 'image/svg+xml')
+        if (blob) {
+          const url = URL.createObjectURL(blob)
+          const img = document.createElement('img')
+          img.alt = 'output'
+          img.src = url
+          img.onload = () => URL.revokeObjectURL(url)
+          outputClone.appendChild(img)
+        } else {
+          outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+        }
+      }
       break
     }
     case 'audio': {
-        {
-          const body = (output as string).trim()
-          if (body.startsWith('MOCK_RESULT:')) {
-            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
-            break
-          }
-
-          const blob = await getBlobFromServerOutput(body, 'audio/mpeg')
-          if (blob) {
-            const url = URL.createObjectURL(blob)
-            const audio = document.createElement('audio')
-            audio.controls = true
-            const source = document.createElement('source')
-            source.src = url
-            audio.appendChild(source)
-            audio.onloadedmetadata = () => URL.revokeObjectURL(url)
-            outputClone.appendChild(audio)
-          } else {
-            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
-          }
+      {
+        if (output instanceof Blob) {
+          const url = URL.createObjectURL(output)
+          const audio = document.createElement('audio')
+          audio.controls = true
+          const source = document.createElement('source')
+          source.src = url
+          audio.appendChild(source)
+          audio.onloadedmetadata = () => URL.revokeObjectURL(url)
+          outputClone.appendChild(audio)
+          break
         }
+        const body = (output as string).trim()
+        if (body.startsWith('MOCK_RESULT:')) {
+          outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+          break
+        }
+        const blob = await getBlobFromServerOutput(body, 'audio/mpeg')
+        if (blob) {
+          const url = URL.createObjectURL(blob)
+          const audio = document.createElement('audio')
+          audio.controls = true
+          const source = document.createElement('source')
+          source.src = url
+          audio.appendChild(source)
+          audio.onloadedmetadata = () => URL.revokeObjectURL(url)
+          outputClone.appendChild(audio)
+        } else {
+          outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+        }
+      }
       break
     }
-    default:
-      outputClone.innerHTML = output as string
+    default: {
+      const text = typeof output === 'string' ? output : await (output as Blob).text()
+      outputClone.innerHTML = text
+    }
   }
 
   nbElm.appendChild(outputClone)

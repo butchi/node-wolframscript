@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ALLOWED_NAMES, nameToHead } from './func.js'
+import zlib from 'node:zlib'
 import type { BinaryResponse, ExecOutput } from './types.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -82,7 +83,20 @@ app.use(async (ctx: any, next: any) => {
         if (outObj.mime) ctx.type = outObj.mime
         ctx.body = outObj.body
       } else {
-        ctx.body = String(outVal ?? '')
+        // If ExportString was asked for {"Base64", "<FMT>"}, decode and return binary with correct MIME.
+        const outStr = String(outVal ?? '')
+        const fmtMatch = cmd.match(/\{\s*"Base64"\s*,\s*"([A-Za-z0-9]+)"\s*\}/)
+        if (fmtMatch) {
+          const fmt = fmtMatch[1]
+          const decoded = decodeDataUriOrBase64(outStr)
+          if (decoded) {
+            const preferred = mimeForFormat(fmt)
+            ctx.type = preferred || decoded.mime
+            ctx.body = decoded.buffer
+            return
+          }
+        }
+        ctx.body = outStr
       }
       return
     } catch (err) {
@@ -129,6 +143,147 @@ const trimRegExp = /[\\\r\n\s]+\>?[\\\r\n\s]+/g
 
 let wolframAvailable = false
 let wolframscriptProcess: ReturnType<typeof spawn> | undefined
+
+// --- PNG helper (for mock PNG generation) ---
+function crc32(buf: Buffer): number {
+  let c = ~0 >>> 0
+  for (let i = 0; i < buf.length; i++) {
+    c ^= buf[i]
+    for (let k = 0; k < 8; k++) {
+      const m = -(c & 1)
+      c = (c >>> 1) ^ (0xEDB88320 & m)
+    }
+  }
+  return (~c) >>> 0
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4)
+  len.writeUInt32BE(data.length, 0)
+  const typeBuf = Buffer.from(type, 'ascii')
+  const crcInput = Buffer.concat([typeBuf, data])
+  const crc = Buffer.alloc(4)
+  crc.writeUInt32BE(crc32(crcInput), 0)
+  return Buffer.concat([len, typeBuf, data, crc])
+}
+
+function makeSolidPng(width: number, height: number, rgb: [number, number, number]): Buffer {
+  const sig = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  ihdr.writeUInt8(8, 8) // bit depth
+  ihdr.writeUInt8(2, 9) // color type: truecolor
+  ihdr.writeUInt8(0, 10) // compression
+  ihdr.writeUInt8(0, 11) // filter
+  ihdr.writeUInt8(0, 12) // interlace
+  const ihdrChunk = pngChunk('IHDR', ihdr)
+
+  const rowLen = 1 + width * 3 // filter byte + RGB per pixel
+  const raw = Buffer.alloc(rowLen * height)
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * rowLen
+    raw[rowStart] = 0 // filter 0 (None)
+    for (let x = 0; x < width; x++) {
+      const i = rowStart + 1 + x * 3
+      raw[i] = rgb[0]
+      raw[i + 1] = rgb[1]
+      raw[i + 2] = rgb[2]
+    }
+  }
+  const compressed = zlib.deflateSync(raw)
+  const idatChunk = pngChunk('IDAT', compressed)
+  const iendChunk = pngChunk('IEND', Buffer.alloc(0))
+  return Buffer.concat([sig, ihdrChunk, idatChunk, iendChunk])
+}
+
+// Very simple PNG plot generator for mock: draws axes and a sampled curve
+function makePlotPng(width: number, height: number, opts: { fn: (x: number) => number; xMin: number; xMax: number }): Buffer {
+  const sig = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
+  const ihdr = Buffer.alloc(13)
+  ihdr.writeUInt32BE(width, 0)
+  ihdr.writeUInt32BE(height, 4)
+  ihdr.writeUInt8(8, 8)
+  ihdr.writeUInt8(2, 9)
+  ihdr.writeUInt8(0, 10)
+  ihdr.writeUInt8(0, 11)
+  ihdr.writeUInt8(0, 12)
+  const ihdrChunk = pngChunk('IHDR', ihdr)
+
+  // raw RGB rows with filter byte per row
+  const rowLen = 1 + width * 3
+  const raw = Buffer.alloc(rowLen * height, 0)
+  // fill white background
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * rowLen
+    raw[rowStart] = 0
+    for (let x = 0; x < width; x++) {
+      const i = rowStart + 1 + x * 3
+      raw[i] = 255; raw[i + 1] = 255; raw[i + 2] = 255
+    }
+  }
+
+  const putPixel = (x: number, y: number, r: number, g: number, b: number) => {
+    if (x < 0 || y < 0 || x >= width || y >= height) return
+    const rowStart = y * rowLen
+    const i = rowStart + 1 + x * 3
+    raw[i] = r; raw[i + 1] = g; raw[i + 2] = b
+  }
+  const drawLine = (x0: number, y0: number, x1: number, y1: number, col: [number, number, number]) => {
+    x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0
+    const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1
+    const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1
+    let err = dx + dy
+    while (true) {
+      putPixel(x0, y0, col[0], col[1], col[2])
+      if (x0 === x1 && y0 === y1) break
+      const e2 = 2 * err
+      if (e2 >= dy) { err += dy; x0 += sx }
+      if (e2 <= dx) { err += dx; y0 += sy }
+    }
+  }
+
+  const { fn, xMin, xMax } = opts
+  // sample function to determine y-range
+  const samples = 512
+  const xs: number[] = []
+  const ys: number[] = []
+  let yMin = Number.POSITIVE_INFINITY, yMax = Number.NEGATIVE_INFINITY
+  for (let i = 0; i < samples; i++) {
+    const t = i / (samples - 1)
+    const x = xMin + (xMax - xMin) * t
+    const y = fn(x)
+    xs.push(x); ys.push(y)
+    if (isFinite(y)) { if (y < yMin) yMin = y; if (y > yMax) yMax = y }
+  }
+  if (!isFinite(yMin) || !isFinite(yMax) || yMin === yMax) { yMin = -1; yMax = 1 }
+  // add margins
+  const yPad = (yMax - yMin) * 0.1 || 1
+  yMin -= yPad; yMax += yPad
+
+  // map function to pixel coords
+  const toX = (x: number) => Math.round((x - xMin) / (xMax - xMin) * (width - 1))
+  const toY = (y: number) => Math.round((1 - (y - yMin) / (yMax - yMin)) * (height - 1))
+
+  // axes (grey)
+  const zeroX = (0 >= xMin && 0 <= xMax) ? toX(0) : -1
+  const zeroY = (0 >= yMin && 0 <= yMax) ? toY(0) : -1
+  if (zeroX >= 0) drawLine(zeroX, 0, zeroX, height - 1, [200, 200, 200])
+  if (zeroY >= 0) drawLine(0, zeroY, width - 1, zeroY, [200, 200, 200])
+
+  // curve (blue)
+  let px = toX(xs[0]); let py = toY(ys[0])
+  for (let i = 1; i < samples; i++) {
+    const qx = toX(xs[i]); const qy = toY(ys[i])
+    if (isFinite(ys[i - 1]) && isFinite(ys[i])) drawLine(px, py, qx, qy, [13, 110, 253])
+    px = qx; py = qy
+  }
+
+  const compressed = zlib.deflateSync(raw)
+  const idatChunk = pngChunk('IDAT', compressed)
+  const iendChunk = pngChunk('IEND', Buffer.alloc(0))
+  return Buffer.concat([sig, ihdrChunk, idatChunk, iendChunk])
+}
 
 // Check whether `wolframscript` is available on PATH before spawning.
 try {
@@ -209,8 +364,34 @@ if (!wolframAvailable) {
             return
           }
           if (wantsBase64PNG) {
-              const png1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
-              ee.emit('message', `data:image/png;base64,${png1x1}`)
+              // If looks like Plot[ f[var], {var,a,b} ] then draw a simple plot
+              const plotMatch = cmd.match(/Plot\[\s*([\s\S]+?)\s*,\s*\{\s*([a-zA-Z][\w]*)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\}\s*\]/)
+              if (plotMatch) {
+                const expr = plotMatch[1]
+                const varName = plotMatch[2]
+                const a = parseFloat(plotMatch[3]); const b = parseFloat(plotMatch[4])
+                // support a couple of simple forms: var^2, Sin[var], Cos[var]
+                let fn: (x: number) => number
+                try {
+                  const reSin = new RegExp(`\\bSin\\s*\\[\\s*${varName}\\s*\\]`)
+                  const reCos = new RegExp(`\\bCos\\s*\\[\\s*${varName}\\s*\\]`)
+                  const reSq = new RegExp(`\\b${varName}\\s*\\^\\s*2\\b`)
+                  if (reSin.test(expr)) fn = Math.sin
+                  else if (reCos.test(expr)) fn = Math.cos
+                  else if (reSq.test(expr)) fn = (x) => x * x
+                  else fn = (x) => Math.sin(x)
+                } catch {
+                  fn = (x) => Math.sin(x)
+                }
+                const png = makePlotPng(512, 384, { fn, xMin: a, xMax: b })
+                const b64 = png.toString('base64')
+                ee.emit('message', `data:image/png;base64,${b64}`)
+              } else {
+                // fallback: visible solid
+                const png = makeSolidPng(256, 256, [13, 110, 253])
+                const b64 = png.toString('base64')
+                ee.emit('message', `data:image/png;base64,${b64}`)
+              }
             return
           }
           if (wantsBase64MP3) {
@@ -351,6 +532,169 @@ router.get('/matra.js', async (ctx: any) => {
   }
 })
 
+// Simple helper to map format -> MIME
+function mimeForFormat(fmt: string): string | undefined {
+  const f = String(fmt || '').trim().toLowerCase()
+  switch (f) {
+    case 'png':
+      return 'image/png'
+    case 'svg':
+      return 'image/svg+xml'
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'gif':
+      return 'image/gif'
+    case 'webp':
+      return 'image/webp'
+    case 'mp3':
+      return 'audio/mpeg'
+    case 'wav':
+      return 'audio/wav'
+    default:
+      return undefined
+  }
+}
+
+// Decode ExportString outputs (data URI or bare Base64) into Buffer and infer MIME.
+// Supports common signatures: PNG, JPEG, GIF, WebP, WAV, MP3. Returns null if not decodable.
+function decodeDataUriOrBase64(output: string): { mime: string; buffer: Buffer } | null {
+  if (typeof output !== 'string') return null
+  const trimmed = output.trim()
+
+  // data:[mime];base64,<payload>
+  const dataUriMatch = trimmed.match(/^data:([^;]+);base64,([A-Za-z0-9+/=\r\n]+)$/)
+  if (dataUriMatch) {
+    const mime = dataUriMatch[1]
+    const b64 = dataUriMatch[2].replace(/\s+/g, '')
+    try {
+      const buf = Buffer.from(b64, 'base64')
+      return { mime, buffer: buf }
+    } catch {
+      return null
+    }
+  }
+
+  // Bare base64? Try to decode and detect by magic bytes
+  const bare = trimmed.replace(/\s+/g, '')
+  if (/^[A-Za-z0-9+/=]+$/.test(bare) && bare.length > 16) {
+    try {
+      const buf = Buffer.from(bare, 'base64')
+      // PNG
+      if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47 && buf[4] === 0x0D && buf[5] === 0x0A && buf[6] === 0x1A && buf[7] === 0x0A) {
+        return { mime: 'image/png', buffer: buf }
+      }
+      // JPEG
+      if (buf.length >= 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) {
+        return { mime: 'image/jpeg', buffer: buf }
+      }
+      // GIF87a/89a
+      if (buf.length >= 6 && buf.toString('ascii', 0, 6).startsWith('GIF8')) {
+        return { mime: 'image/gif', buffer: buf }
+      }
+      // WebP (RIFF....WEBP)
+      if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WEBP') {
+        return { mime: 'image/webp', buffer: buf }
+      }
+      // WAV (RIFF....WAVE)
+      if (buf.length >= 12 && buf.toString('ascii', 0, 4) === 'RIFF' && buf.toString('ascii', 8, 12) === 'WAVE') {
+        return { mime: 'audio/wav', buffer: buf }
+      }
+      // MP3 (very loose: starts with ID3 or 0xFF Ex frame sync)
+      if ((buf.length >= 3 && buf.toString('ascii', 0, 3) === 'ID3') || (buf.length >= 2 && buf[0] === 0xFF && (buf[1] & 0xE0) === 0xE0)) {
+        return { mime: 'audio/mpeg', buffer: buf }
+      }
+      // Unknown binary but decodable; let caller decide (default to octet-stream)
+      return { mime: 'application/octet-stream', buffer: buf }
+    } catch {
+      return null
+    }
+  }
+
+  // Not decodable
+  return null
+}
+
+// New API: transform arbitrary input using ImportString/ToExpression then ExportString
+// Body JSON: { data: string, type?: string, format?: string, encoding?: string }
+router.post('/wolfram/transform', async (ctx: any) => {
+  console.log(ctx.method, ctx.url)
+  let body: any = ctx.request.body
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body) } catch {}
+  }
+  const data: string = String(body?.data ?? '')
+  const type: string = String(body?.type ?? '')
+  const format: string = String(body?.format ?? '')
+  const encoding: string = String(body?.encoding ?? '')
+
+  // Build Wolfram command according to the provided APIFunction idea
+  const toExpr = !type
+    ? `ToExpression[${JSON.stringify(data)}]`
+    : `ImportString[${JSON.stringify(data)}, ${JSON.stringify(type)}]`
+
+  const cmd = !format
+    ? `ExportString[${toExpr}, "ExpressionJSON"]`
+    : (!encoding
+        ? `ExportString[${toExpr}, ${JSON.stringify(format)}]`
+        : `ExportString[${toExpr}, {${JSON.stringify(encoding)}, ${JSON.stringify(format)}}]`)
+
+  // If wolfram is available, route through the same REPL pipeline; else mock
+  if (wolframAvailable) {
+    inArr.push(cmd)
+    ee.emit('input', cmd)
+    const output: any = await new Promise((resolve, reject) => {
+      const onMessage = (data: any) => { ee.off('message', onMessage); ee.off('error', onError); resolve(data) }
+      const onError = (err: any) => { ee.off('message', onMessage); ee.off('error', onError); reject(err) }
+      ee.on('message', onMessage)
+      ee.on('error', onError)
+    })
+
+    const mime = mimeForFormat(format)
+    // If we got a data URI or bare base64 and encoding indicates Base64, decode to binary
+    if (typeof output === 'string' && mime && encoding.toLowerCase() === 'base64') {
+      const trimmed = output.trim()
+      let b64 = ''
+      const m = trimmed.match(/^data:[^;]+;base64,([A-Za-z0-9+/=\r\n]+)/)
+      if (m) b64 = m[1]
+      else b64 = trimmed.replace(/\s+/g, '')
+      try {
+        const buf = Buffer.from(b64, 'base64')
+        ctx.type = mime
+        ctx.body = buf
+        return
+      } catch {}
+    }
+    // Even if encoding parameter wasn't provided as Base64, try generic decode (data URI / base64)
+    if (typeof output === 'string') {
+      const decoded = decodeDataUriOrBase64(output)
+      if (decoded) {
+        ctx.type = decoded.mime
+        ctx.body = decoded.buffer
+        return
+      }
+    }
+    // Fallback: return as-is (text)
+    ctx.body = output
+    return
+  }
+
+  // Mock responder for transform when wolfram is not available
+  const mime = mimeForFormat(format)
+  if (mime === 'image/png') {
+    // Return a visible 256x256 solid PNG as binary Buffer (mock)
+    const png = makeSolidPng(256, 256, [13, 110, 253]) // #0d6efd
+    ctx.type = 'image/png'
+    ctx.body = png
+    return
+  }
+
+  // Default mock: echo back ExpressionJSON or text as data URI text/plain
+  const txt = `MOCK_TRANSFORM: ${cmd}`
+  ctx.type = 'text/plain; charset=utf-8'
+  ctx.body = txt
+})
+
 router.post('/wolfram/exec', async (ctx: any) => {
   console.log(ctx.method, ctx.url)
 
@@ -459,7 +803,20 @@ router.post('/wolfram/exec', async (ctx: any) => {
         if (outObj.mime) ctx.type = outObj.mime
         ctx.body = outObj.body
       } else {
-        ctx.body = String(outVal2 ?? '')
+        // Optional binary passthrough: if client requests binary=1 or X-Return-Binary: 1,
+        // and output looks like data URI or Base64, decode and set appropriate MIME.
+        const wantBinary = String(ctx.query?.binary || '').trim() === '1' || String(ctx.get('x-return-binary') || '').trim() === '1'
+        const outStr = String(outVal2 ?? '')
+        if (wantBinary) {
+          const decoded = decodeDataUriOrBase64(outStr)
+          if (decoded) {
+            ctx.type = decoded.mime
+            ctx.body = decoded.buffer
+            resolve()
+            return
+          }
+        }
+        ctx.body = outStr
       }
 
       resolve()
