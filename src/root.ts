@@ -1,5 +1,5 @@
 import * as func from './func.js'
-import type { Action, Expr } from './types.js'
+import type { Action } from './types.js'
 // Matra parser replaces previous wjs sugar
 import { parseMatra, matraToExpressionJSON } from './matra.js'
 import { ALLOWED_NAMES, nameToHead } from './func.js'
@@ -22,15 +22,6 @@ contentClone.querySelector('[data-slot]')!.appendChild(mainElm)
 document.body.appendChild(contentClone)
 
 // for debug: expose individual function names and the namespace on globalThis
-for (const key in func) {
-  if (Object.prototype.hasOwnProperty.call(func, key)) {
-    // @ts-ignore attach for console debug
-    ;(globalThis as any)[key] = (func as any)[key]
-  }
-}
-// also expose the namespace for convenience
-// @ts-ignore
-;(globalThis as any).func = func
 // expose W.<Head>(...) sugar via a Proxy so arbitrary heads need not be predeclared
 // @ts-ignore
 ;(globalThis as any).W = new Proxy(
@@ -43,6 +34,96 @@ for (const key in func) {
     },
   }
 )
+
+// Provide an `M` namespace for the restricted, user-friendly aliases.
+// `M.Plus` and `M.Times` behave like `W.Plus`/`W.Times` but are intended to be
+// the target for small-letter convenience functions (plus(), times(), ...).
+// @ts-ignore
+;(globalThis as any).M = new Proxy(
+  {},
+  {
+    get: (_target, prop) => {
+      if (typeof prop === 'string') return (func as any).W(prop)
+      return undefined
+    },
+  }
+)
+
+// Limit global convenience names to a small curated set and map to M.<Head>
+// This keeps the door open for future specialized implementations that accept
+// primitive values and expressions seamlessly while currently delegating to W/M.
+
+// Re-route small-letter convenience functions to the `M` namespace (restricted)
+// so `plus(...)` -> `M.Plus(...)`. Keep `W.*` as the unrestricted raw caller.
+// @ts-ignore
+;(globalThis as any).plus = (...args: unknown[]) => (globalThis as any).M.Plus(...args)
+// @ts-ignore
+;(globalThis as any).times = (...args: unknown[]) => (globalThis as any).M.Times(...args)
+
+// also expose the func namespace for debugging convenience (not all names bound globally)
+// @ts-ignore
+;(globalThis as any).func = func
+
+// Developer convenience: template-tag helpers for explicit Matra/ExpressionJSON construction
+// Usage:
+//   matra`W.Plus(1,2,3)` -> returns Matra AST for the content
+//   matraExpr`["Plus",1,2,3]` -> returns ExpressionJSON (as JS array)
+//   expressionJSON(["Plus",1,2,3]) -> identity helper
+// These helpers are intended for developer/debug use and make intent explicit.
+// @ts-ignore
+;(globalThis as any).matra = (strings: TemplateStringsArray, ...args: any[]) => {
+  const s = strings.raw[0]
+  try {
+    return parseMatra(s)
+  } catch (e) {
+    console.error('matra parse error:', e)
+    return null
+  }
+}
+// @ts-ignore
+;(globalThis as any).matraExpr = (strings: TemplateStringsArray, ...args: any[]) => {
+  const s = strings.raw[0].trim()
+  // If looks like JSON array, parse directly
+  if (s.startsWith('[')) {
+    try {
+      return JSON.parse(s)
+    } catch (e) {
+      console.error('matraExpr JSON parse error:', e)
+      return null
+    }
+  }
+
+  // Otherwise parse as Matra and convert to ExpressionJSON
+  try {
+    const ast = parseMatra(s)
+    // Special-case: object with xpath pointing to /W/Head -> map to that head
+    if (Array.isArray(ast) && ast[0] === 'object' && ast[1] && typeof ast[1] === 'object') {
+      const attrs = ast[1] as Record<string, any>
+      const xpath = attrs['xpath']
+      if (typeof xpath === 'string') {
+        const m = xpath.match(/^\/W\/([A-Za-z_][\w]*)$/)
+        if (m) {
+          const head = m[1]
+          const args = Array.isArray(ast[2]) ? ast[2] : []
+          const out: any[] = [head, ...args]
+          for (const [k, v] of Object.entries(attrs)) {
+            if (k === 'xpath') continue
+            out.push(['Rule', k, v])
+          }
+          return out
+        }
+      }
+    }
+
+    // Fallback: use generic matraToExpressionJSON
+    return matraToExpressionJSON(ast, { nameToHead })
+  } catch (e) {
+    console.error('matraExpr conversion error:', e)
+    return null
+  }
+}
+// @ts-ignore
+;(globalThis as any).expressionJSON = (arr: any[]) => arr
 
 // 入力タイプ判定関数（Matra対応: デフォルトはMatraとみなす）
 function detectInputType(input: string): string | null {
@@ -78,7 +159,7 @@ function detectInputType(input: string): string | null {
 
 // Matra parsing helpers are in src/matra.ts and imported above
 
-const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) => {
+const evaluate = async ({ action }: { action?: Action } = {}) => {
   const textarea = inputElm.querySelector<HTMLTextAreaElement>('textarea')
   const input = textarea?.value ?? ''
   if (!input?.trim()) return
@@ -152,8 +233,30 @@ const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) 
         .trim()
       try {
         const ast = parseMatra(jsStr)
+        // Disallow bare capitalized sugar calls that match allowed canonical heads
+        // e.g. `Plus(1,2)` should be disallowed; use `plus(...)` or `W.Plus(...)`.
+        const sugarMatch = jsStr.match(/^([a-zA-Z_][\w-]*)\s*\(/)
+        if (sugarMatch) {
+          const called = sugarMatch[1]
+          // build allowed canonical head names from ALLOWED_NAMES
+          const allowedCanonical = new Set<string>()
+          for (const n of ALLOWED_NAMES) {
+            const head = nameToHead(n) ?? n[0].toUpperCase() + n.slice(1)
+            allowedCanonical.add(head)
+          }
+          if (/^[A-Z]/.test(called) && allowedCanonical.has(called)) {
+            throw new Error(`Disallowed bare head call: ${called}. Use lower-case shorthand or W.${called}`)
+          }
+        }
         // 旧Expr {head,body} ではなく、Matra ASTを保持
         obj = ast
+        // If no explicit action requested, choose sensible default based on head
+        if (!action && Array.isArray(ast) && typeof ast[0] === 'string') {
+          const head = ast[0] as string
+          // For plotting-like heads, prefer vector output; otherwise JSON
+          if (head.toLowerCase() === 'plot' || head.toLowerCase() === 'plot3d') action = 'vector'
+          else action = 'json'
+        }
       } catch (e) {
         console.info('Matra parse failed:', e)
       }

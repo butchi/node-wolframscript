@@ -147,7 +147,8 @@ function parseValue(token: string): unknown {
 
   // Matra or sugar inside values: try recursively
   try {
-    if (/^[a-zA-Z_][\w-]*\s*(\(|\[|\{)/.test(t)) {
+    // accept W.Head(...) nested calls as Matra too
+    if (/^W\.[a-zA-Z_][\w$]*\s*\(/.test(t) || /^[a-zA-Z_][\w-]*\s*(\(|\[|\{)/.test(t)) {
       return parseMatra(t)
     }
   } catch {}
@@ -186,6 +187,15 @@ function parseAttributes(src: string): Record<string, unknown> {
 
 export function parseMatra(input: string): MatraAst {
   const s = input.trim()
+  // Special-case: W.Head(...) sugar to allow W.Plus(1,2) style calls
+  const wmatch = s.match(/^W\.([a-zA-Z_][\w$]*)\s*\((.*)\)$/s)
+  if (wmatch) {
+    const head = wmatch[1]
+    const inner = wmatch[2].trim()
+    const parts = inner.length > 0 ? splitTopLevelCommas(inner) : []
+    const args = parts.map((p) => parseValue(p))
+    return [head, {}, args]
+  }
   // 1) Sugar: name(args)
   let m = s.match(/^([a-zA-Z_][\w-]*)\s*\(/)
   if (m) {
