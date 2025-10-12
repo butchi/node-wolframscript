@@ -38,6 +38,11 @@ function detectInputType(input: string): string | null {
     return m ? m[1].toLowerCase() : null
   }
   if (/^`[\s\S]*`$/.test(trimmed)) return 'js'
+  if (/^[a-zA-Z0-9]+`[\s\S]*`$/.test(trimmed)) {
+    const m = trimmed.match(/^([a-zA-Z0-9]+)`/)
+    const lang = m && m[1]
+    return lang ? lang.toLowerCase() : null
+  }
   if (/^\$\$\n[\s\S]*\n\$\$$/.test(trimmed)) return 'texblock'
   if (/^\$[\s\S]*\$$/.test(trimmed)) return 'tex'
   try {
@@ -112,6 +117,44 @@ const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) 
       obj = eval(`(${jsStr})`)
       console.log('JavaScript String:', jsStr)
       break
+    case 'wjs':
+      // wjs: light-weight JS-like sugar for calling functions, e.g. plus(1,2)
+      jsStr = trimmed
+        .replace(/^```[a-zA-Z0-9]*\n/, '')
+        .replace(/\n```$/, '')
+        .replace(/^[a-zA-Z0-9]+`|`$/g, '')
+        .trim()
+
+      // parse simple call: name(arg1,arg2,...)
+      const callRe = /^([a-zA-Z_$][\w$]*)\s*\((.*)\)$/s
+      const m = jsStr.match(callRe)
+      if (m) {
+        const name = m[1]
+        const argsText = m[2].trim()
+        let args: unknown[] = []
+        if (argsText.length > 0) {
+          // try to parse as JSON array by wrapping
+          try {
+            args = JSON.parse(`[${argsText}]`)
+          } catch {
+            // fallback: split on commas (very simple, no nested commas)
+            args = argsText.split(',').map((s) => {
+              const t = s.trim()
+              if (/^\d+$/.test(t)) return Number(t)
+              try {
+                return JSON.parse(t)
+              } catch {
+                return t
+              }
+            })
+          }
+        }
+
+        obj = { call: name, args }
+      } else {
+        console.info('wjs parse failed; not a call expression')
+      }
+      break
     case 'wolfram':
     case 'wl':
       wolframStr = trimmed
@@ -134,6 +177,31 @@ const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) 
 
   if (!exprStr) {
     if (obj != null) {
+      // If obj is a call descriptor {call, args}, convert to Expr
+      if (typeof obj === 'object' && obj !== null && 'call' in obj && Array.isArray((obj as any).args)) {
+        const callName = (obj as any).call
+        const callArgs = (obj as any).args
+
+        // whitelist of allowed short-call names
+        const allowed = new Set(['plus', 'times', 'sin', 'cos', 'sqrt', 'random', 'power', 'divide', 'minus'])
+
+        const overrides: Record<string, string> = {
+          random: 'RandomReal',
+          factorInt: 'FactorInteger',
+          lucas: 'LucasL',
+          bernoulli: 'BernoulliB',
+          euler: 'EulerE',
+          nm: 'N',
+        }
+
+        if (typeof callName === 'string' && allowed.has(callName)) {
+          const head = overrides[callName] ?? callName[0].toUpperCase() + callName.slice(1)
+          obj = { head, body: callArgs }
+        } else {
+          throw new Error(`Disallowed or invalid call: ${String(callName)}`)
+        }
+      }
+
       const exprJsonStr = JSON.stringify(obj, replacer as any, 2).replace(/"/g, '\\"')
       exprStr = `ImportString["${exprJsonStr}", "ExpressionJSON"]`
       cmd = `ExportString[${exprStr}, "ExpressionJSON"]`

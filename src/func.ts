@@ -12,264 +12,312 @@ export const constant = (head: string): Expr => ({
   body: [],
 })
 
-export const nm = operate('N')
-export const plus = operate('Plus')
-export const times = operate('Times')
-export const power = operate('Power')
-export const divide = operate('Divide')
-export const minus = operate('Subtract')
-export const and = operate('And')
-export const or = operate('Or')
-export const not = operate('Not')
-export const equal = operate('Equal')
-export const sin = operate('Sin')
-export const cos = operate('Cos')
-export const tan = operate('Tan')
-export const asin = operate('ArcSin')
-export const acos = operate('ArcCos')
-export const atan = operate('ArcTan')
-export const log = operate('Log')
-export const exp = operate('Exp')
-export const sqrt = operate('Sqrt')
-export const abs = operate('Abs')
-export const floor = operate('Floor')
-export const ceiling = operate('Ceiling')
-export const round = operate('Round')
-export const min = operate('Min')
-export const max = operate('Max')
-export const sign = operate('Sign')
-export const factorial = operate('Factorial')
-export const binomial = operate('Binomial')
-export const gcd = operate('GCD')
-export const lcm = operate('LCM')
-export const mod = operate('Mod')
-export const random = operate('RandomReal')
-export const factorInt = operate('FactorInteger')
-export const primeQ = operate('PrimeQ')
-export const prime = operate('Prime')
-export const primePi = operate('PrimePi')
-export const fibonacci = operate('Fibonacci')
-export const lucas = operate('LucasL')
-export const bernoulli = operate('BernoulliB')
-export const euler = operate('EulerE')
-export const zeta = operate('Zeta')
-export const riemannR = operate('RiemannR')
-export const gamma = operate('Gamma')
-export const root = operate('Root')
+// Helper to convert UpperCamelCase -> lowerCamelCase
+const toLowerCamel = (s: string) => (s ? s[0].toLowerCase() + s.slice(1) : s)
 
-export const pi = constant('Pi')
-export const ee = constant('E')
-export const ii = constant('I')
-export const infinity = constant('Infinity')
-export const complexInfinity = constant('ComplexInfinity')
-export const directedInfinity = constant('DirectedInfinity')
-export const indeterminate = constant('Indeterminate')
-export const undefinedSymbol = constant('Undefined')
-export const nullSymbol = constant('Null')
-export const trueSymbol = constant('True')
-export const falseSymbol = constant('False')
-export const goldenRatio = constant('GoldenRatio')
-export const goldenAngle = constant('GoldenAngle')
-export const eulerGamma = constant('EulerGamma')
-export const stieltjesGamma = constant('StieltjesGamma')
-export const catalan = constant('Catalan')
+// Overrides for cases where the simple lower-camel conversion shouldn't be used
+// or where a different exported name was chosen historically.
+const operateNameOverrides: Record<string, string> = {
+  N: 'approx',
+  RandomReal: 'random',
+  FactorInteger: 'factorInt',
+  LucasL: 'lucas',
+  BernoulliB: 'bernoulli',
+  EulerE: 'euler',
+}
 
-export const table = operate('Table')
-export const list = operate('List')
-export const set = operate('Set')
-export const setDelayed = operate('SetDelayed')
-export const rule = operate('Rule')
-export const ruleDelayed = operate('RuleDelayed')
-export const functionSymbol = operate('Function')
-export const pattern = operate('Pattern')
-export const patternTest = operate('PatternTest')
-export const replace = operate('Replace')
-export const replaceAll = operate('ReplaceAll')
-export const replaceRepeated = operate('ReplaceRepeated')
-export const replacePart = operate('ReplacePart')
-export const select = operate('Select')
-export const del = operate('Delete')
-export const deleteCases = operate('DeleteCases')
-export const deleteDuplicates = operate('DeleteDuplicates')
-export const insert = operate('Insert')
-export const sort = operate('Sort')
-export const sortBy = operate('SortBy')
-export const groupBy = operate('GroupBy')
-export const split = operate('Split')
-export const splitBy = operate('SplitBy')
-export const map = operate('Map')
-export const mapIndexed = operate('MapIndexed')
-export const mapThread = operate('MapThread')
-export const fold = operate('Fold')
-export const foldList = operate('FoldList')
-export const foldWhile = operate('FoldWhile')
-export const scan = operate('Scan')
-export const scanList = operate('ScanList')
-export const nest = operate('Nest')
-export const nestList = operate('NestList')
-export const nestWhile = operate('NestWhile')
-export const accumulate = operate('Accumulate')
-export const transpose = operate('Transpose')
-export const flatten = operate('Flatten')
-export const join = operate('Join')
-export const partition = operate('Partition')
-export const take = operate('Take')
-export const drop = operate('Drop')
-export const takeWhile = operate('TakeWhile')
-export const dropWhile = operate('DropWhile')
-export const count = operate('Count')
-export const length = operate('Length')
-export const first = operate('First')
-export const last = operate('Last')
-export const rest = operate('Rest')
-export const most = operate('Most')
-export const position = operate('Position')
-export const keySort = operate('KeySort')
-export const range = operate('Range')
+const constantNameOverrides: Record<string, string> = {
+  E: 'ee',
+  I: 'ii',
+  Undefined: 'undefinedSymbol',
+  Null: 'nullSymbol',
+  True: 'trueSymbol',
+  False: 'falseSymbol',
+}
 
-export const simplify = operate('Simplify')
-export const fullSimplify = operate('FullSimplify')
-export const factor = operate('Factor')
-export const expand = operate('Expand')
-export const collect = operate('Collect')
-export const together = operate('Together')
-export const apart = operate('Apart')
-export const polynomialQuotient = operate('PolynomialQuotient')
-export const polynomialRemainder = operate('PolynomialRemainder')
-export const polynomialGCD = operate('PolynomialGCD')
-export const polynomialLCM = operate('PolynomialLCM')
+// List of operate heads (use UpperCamelCase as the canonical head names)
+const OPERATE_HEADS = [
+  'N',
+  'Plus',
+  'Times',
+  'Power',
+  'Divide',
+  'Subtract',
+  'And',
+  'Or',
+  'Not',
+  'Equal',
+  'Sin',
+  'Cos',
+  'Tan',
+  'ArcSin',
+  'ArcCos',
+  'ArcTan',
+  'Log',
+  'Exp',
+  'Sqrt',
+  'Abs',
+  'Floor',
+  'Ceiling',
+  'Round',
+  'Min',
+  'Max',
+  'Sign',
+  'Factorial',
+  'Binomial',
+  'GCD',
+  'LCM',
+  'Mod',
+  'RandomReal',
+  'FactorInteger',
+  'PrimeQ',
+  'Prime',
+  'PrimePi',
+  'Fibonacci',
+  'LucasL',
+  'BernoulliB',
+  'EulerE',
+  'Zeta',
+  'RiemannR',
+  'Gamma',
+  'Root',
+  // data / structural
+  'Table',
+  'List',
+  'Set',
+  'SetDelayed',
+  'Rule',
+  'RuleDelayed',
+  'Function',
+  'Pattern',
+  'PatternTest',
+  'Replace',
+  'ReplaceAll',
+  'ReplaceRepeated',
+  'ReplacePart',
+  'Select',
+  'Delete',
+  'DeleteCases',
+  'DeleteDuplicates',
+  'Insert',
+  'Sort',
+  'SortBy',
+  'GroupBy',
+  'Split',
+  'SplitBy',
+  'Map',
+  'MapIndexed',
+  'MapThread',
+  'Fold',
+  'FoldList',
+  'FoldWhile',
+  'Scan',
+  'ScanList',
+  'Nest',
+  'NestList',
+  'NestWhile',
+  'Accumulate',
+  'Transpose',
+  'Flatten',
+  'Join',
+  'Partition',
+  'Take',
+  'Drop',
+  'TakeWhile',
+  'DropWhile',
+  'Count',
+  'Length',
+  'First',
+  'Last',
+  'Rest',
+  'Most',
+  'Position',
+  'KeySort',
+  'Range',
+  // algebra / simplification
+  'Simplify',
+  'FullSimplify',
+  'Factor',
+  'Expand',
+  'Collect',
+  'Together',
+  'Apart',
+  'PolynomialQuotient',
+  'PolynomialRemainder',
+  'PolynomialGCD',
+  'PolynomialLCM',
+  // calculus / transforms
+  'D',
+  'Grad',
+  'Div',
+  'Curl',
+  'Laplacian',
+  'Integrate',
+  'Sum',
+  'Product',
+  'Limit',
+  'Series',
+  'FourierTransform',
+  'InverseFourierTransform',
+  'ZTransform',
+  'InverseZTransform',
+  'DiscreteFourierTransform',
+  'InverseDiscreteFourierTransform',
+  'Solve',
+  'Reduce',
+  // plotting / visualization
+  'Plot',
+  'Plot3D',
+  'ContourPlot',
+  'DensityPlot',
+  'ParametricPlot',
+  'ParametricPlot3D',
+  'PolarPlot',
+  'LogLogPlot',
+  'SemiLogPlot',
+  'BarChart',
+  'PieChart',
+  'Histogram',
+  'BoxWhiskerChart',
+  'ErrorListPlot',
+  'ListPlot',
+  'ListLinePlot',
+  'DateListPlot',
+  'DateListLogPlot',
+  'TimeSeriesForecast',
+  'TimeSeriesModelFit',
+  'Manipulate',
+  'Dynamic',
+  // notebook / document
+  'Notebook',
+  'Cell',
+  'TextCell',
+  'InputCell',
+  'OutputCell',
+  'CodeCell',
+  'ExpressionCell',
+  'TitleCell',
+  'SectionCell',
+  'SubsectionCell',
+  'SubsubsectionCell',
+  'Itemize',
+  'Enumerate',
+  'TextData',
+  'Style',
+  'Grid',
+  'GridBox',
+  'TableBox',
+  'MatrixForm',
+  'TraditionalForm',
+  'InputForm',
+  'OutputForm',
+  'BoxData',
+  'InterpretationBox',
+  'TagBox',
+  'Tooltip',
+  'Hyperlink',
+  'ButtonBox',
+  'Image',
+  'Sound',
+  'Audio',
+  'Video',
+  'Export',
+  'Import',
+  // dates / times / entities
+  'Date',
+  'TimeObject',
+  'DateObject',
+  'TimeSeries',
+  'Quantity',
+  'UnitConvert',
+  'Entity',
+  'EntityClass',
+  'EntityList',
+  'EntityValue',
+  // graphics
+  'Graphics',
+  'Graphics3D',
+  'Line',
+  'Point',
+  'Polygon',
+  'Circle',
+  'Disk',
+  'Rectangle',
+  'Sphere',
+  'Cuboid',
+  'Cone',
+  'Cylinder',
+  'Text',
+  'Style',
+  'Directive',
+  'RGBColor',
+  'RGBAColor',
+  'Hue',
+  'Thickness',
+  'PointSize',
+  'CapForm',
+  'JoinForm',
+  'Mesh',
+  'MeshShading',
+  'Lighting',
+  'Glow',
+  'Specularity',
+  'Opacity',
+  'Texture',
+  'EdgeForm',
+  'FaceForm',
+  'PlotStyle',
+  'PlotRange',
+  'AspectRatio',
+  'ImageSize',
+  'Background',
+  'Frame',
+  'FrameLabel',
+  'Axes',
+  'AxesLabel',
+  'GridLines',
+  'PlotLabel',
+  'ColorFunction',
+  'ColorFunctionScaling',
+]
 
-export const deriv = operate('D')
-export const grad = operate('Grad')
-export const div = operate('Div')
-export const curl = operate('Curl')
-export const laplacian = operate('Laplacian')
-export const integrate = operate('Integrate')
-export const sum = operate('Sum')
-export const product = operate('Product')
-export const limit = operate('Limit')
-export const series = operate('Series')
-export const fourierTransform = operate('FourierTransform')
-export const inverseFourierTransform = operate('InverseFourierTransform')
-export const zTransform = operate('ZTransform')
-export const inverseZTransform = operate('InverseZTransform')
-export const discreteFourierTransform = operate('DiscreteFourierTransform')
-export const inverseDiscreteFourierTransform = operate('InverseDiscreteFourierTransform')
+// constants
+const CONSTANT_HEADS = [
+  'Pi',
+  'E',
+  'I',
+  'Infinity',
+  'ComplexInfinity',
+  'DirectedInfinity',
+  'Indeterminate',
+  'Undefined',
+  'Null',
+  'True',
+  'False',
+  'GoldenRatio',
+  'GoldenAngle',
+  'EulerGamma',
+  'StieltjesGamma',
+  'Catalan',
+]
 
-export const solve = operate('Solve')
-export const reduce = operate('Reduce')
+// Build maps
+const operateEntries = OPERATE_HEADS.map((h) => {
+  const name = operateNameOverrides[h] ?? toLowerCamel(h)
+  return [name, operate(h)] as const
+})
 
-export const plot = operate('Plot')
-export const plot3D = operate('Plot3D')
-export const contourPlot = operate('ContourPlot')
-export const densityPlot = operate('DensityPlot')
-export const parametricPlot = operate('ParametricPlot')
-export const parametricPlot3D = operate('ParametricPlot3D')
-export const polarPlot = operate('PolarPlot')
-export const logLogPlot = operate('LogLogPlot')
-export const semiLogPlot = operate('SemiLogPlot')
-export const barChart = operate('BarChart')
-export const pieChart = operate('PieChart')
-export const histogram = operate('Histogram')
-export const boxWhiskerChart = operate('BoxWhiskerChart')
-export const errorListPlot = operate('ErrorListPlot')
-export const listPlot = operate('ListPlot')
-export const listLinePlot = operate('ListLinePlot')
-export const dateListPlot = operate('DateListPlot')
-export const dateListLogPlot = operate('DateListLogPlot')
-export const timeSeriesForecast = operate('TimeSeriesForecast')
-export const timeSeriesModelFit = operate('TimeSeriesModelFit')
+const operateMap = Object.fromEntries(operateEntries) as Record<string, (...body: unknown[]) => Expr>
 
-export const manipulate = operate('Manipulate')
-export const dynamic = operate('Dynamic')
+const constantEntries = CONSTANT_HEADS.map((h) => {
+  const name = constantNameOverrides[h] ?? toLowerCamel(h)
+  return [name, constant(h)] as const
+})
 
-export const notebook = operate('Notebook')
-export const cell = operate('Cell')
-export const textCell = operate('TextCell')
-export const inputCell = operate('InputCell')
-export const outputCell = operate('OutputCell')
-export const codeCell = operate('CodeCell')
-export const expressionCell = operate('ExpressionCell')
-export const titleCell = operate('TitleCell')
-export const sectionCell = operate('SectionCell')
-export const subsectionCell = operate('SubsectionCell')
-export const subsubsectionCell = operate('SubsubsectionCell')
-export const itemize = operate('Itemize')
-export const enumerate = operate('Enumerate')
-export const textData = operate('TextData')
-export const style = operate('Style')
-export const grid = operate('Grid')
-export const gridBox = operate('GridBox')
-export const tableBox = operate('TableBox')
-export const matrixForm = operate('MatrixForm')
-export const traditionalForm = operate('TraditionalForm')
-export const inputForm = operate('InputForm')
-export const outputForm = operate('OutputForm')
-export const boxData = operate('BoxData')
-export const interpretationBox = operate('InterpretationBox')
-export const tagBox = operate('TagBox')
-export const tooltip = operate('Tooltip')
-export const hyperlink = operate('Hyperlink')
-export const buttonBox = operate('ButtonBox')
-export const image = operate('Image')
-export const sound = operate('Sound')
-export const audio = operate('Audio')
-export const video = operate('Video')
-export const exportSymbol = operate('Export')
-export const importSymbol = operate('Import')
+const constantMap = Object.fromEntries(constantEntries) as Record<string, Expr>
 
-export const date = operate('Date')
-export const timeObject = operate('TimeObject')
-export const dateObject = operate('DateObject')
-export const timeSeries = operate('TimeSeries')
-export const quantity = operate('Quantity')
-export const unitConvert = operate('UnitConvert')
-export const entity = operate('Entity')
-export const entityClass = operate('EntityClass')
-export const entityList = operate('EntityList')
-export const entityValue = operate('EntityValue')
-
-export const graphics = operate('Graphics')
-export const graphics3D = operate('Graphics3D')
-export const line = operate('Line')
-export const point = operate('Point')
-export const polygon = operate('Polygon')
-export const circle = operate('Circle')
-export const disk = operate('Disk')
-export const rectangle = operate('Rectangle')
-export const sphere = operate('Sphere')
-export const cuboid = operate('Cuboid')
-export const cone = operate('Cone')
-export const cylinder = operate('Cylinder')
-export const textGraphics = operate('Text')
-export const styleGraphics = operate('Style')
-export const directive = operate('Directive')
-export const rgbColor = operate('RGBColor')
-export const rgbaColor = operate('RGBAColor')
-export const hue = operate('Hue')
-export const thickness = operate('Thickness')
-export const pointSize = operate('PointSize')
-export const capForm = operate('CapForm')
-export const joinForm = operate('JoinForm')
-export const mesh = operate('Mesh')
-export const meshShading = operate('MeshShading')
-export const lighting = operate('Lighting')
-export const glow = operate('Glow')
-export const specularity = operate('Specularity')
-export const opacity = operate('Opacity')
-export const texture = operate('Texture')
-export const edgeForm = operate('EdgeForm')
-export const faceForm = operate('FaceForm')
-export const plotStyle = operate('PlotStyle')
-export const plotRange = operate('PlotRange')
-export const aspectRatio = operate('AspectRatio')
-export const imageSize = operate('ImageSize')
-export const background = operate('Background')
-export const frame = operate('Frame')
-export const frameLabel = operate('FrameLabel')
-export const axes = operate('Axes')
-export const axesLabel = operate('AxesLabel')
-export const gridLines = operate('GridLines')
-export const plotLabel = operate('PlotLabel')
-export const colorFunction = operate('ColorFunction')
-export const colorFunctionScaling = operate('ColorFunctionScaling')
+// Single namespace object for easier management: func.plus, func.pi, etc.
+export const func = {
+  ...operateMap,
+  ...constantMap,
+} as const
