@@ -339,46 +339,73 @@ const evaluate = async ({ action }: { action?: Action } = {}) => {
       }
       break
     case 'raster': {
-      const body = (output as string).trim()
-      // If server returned the textual mock, show it instead of attempting to build a data URI
-      if (body.startsWith('MOCK_RESULT:')) {
-        outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
-        break
-      }
-      const maybe = extractBase64OrDataUri(body)
-      if (maybe.startsWith('data:')) {
-        outputClone.innerHTML = `<img src="${maybe}" alt="output">`
-      } else {
-        outputClone.innerHTML = `<img src="data:image/png;base64,${maybe}" alt="output">`
-      }
+        {
+          const body = (output as string).trim()
+          // If server returned the textual mock, show it instead of attempting to build a data URI
+          if (body.startsWith('MOCK_RESULT:')) {
+            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+            break
+          }
+
+          const blob = await getBlobFromServerOutput(body, 'image/png')
+          if (blob) {
+            const url = URL.createObjectURL(blob)
+            const img = document.createElement('img')
+            img.alt = 'output'
+            img.src = url
+            img.onload = () => URL.revokeObjectURL(url)
+            outputClone.appendChild(img)
+          } else {
+            // fallback: show raw output
+            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+          }
+        }
       break
     }
     case 'vector': {
-      const body = (output as string).trim()
-      if (body.startsWith('MOCK_RESULT:')) {
-        outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
-        break
-      }
-      const maybe = extractBase64OrDataUri(body)
-      if (maybe.startsWith('data:')) {
-        outputClone.innerHTML = `<img src="${maybe}" alt="output">`
-      } else {
-        outputClone.innerHTML = `<img src="data:image/svg+xml;base64,${maybe}" alt="output">`
-      }
+        {
+          const body = (output as string).trim()
+          if (body.startsWith('MOCK_RESULT:')) {
+            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+            break
+          }
+
+          const blob = await getBlobFromServerOutput(body, 'image/svg+xml')
+          if (blob) {
+            const url = URL.createObjectURL(blob)
+            const img = document.createElement('img')
+            img.alt = 'output'
+            img.src = url
+            img.onload = () => URL.revokeObjectURL(url)
+            outputClone.appendChild(img)
+          } else {
+            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+          }
+        }
       break
     }
     case 'audio': {
-      const body = (output as string).trim()
-      if (body.startsWith('MOCK_RESULT:')) {
-        outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
-        break
-      }
-      const maybe = extractBase64OrDataUri(body)
-      if (maybe.startsWith('data:')) {
-        outputClone.innerHTML = `<audio controls><source src="${maybe}"></source>`
-      } else {
-        outputClone.innerHTML = `<audio controls><source type="audio/mpeg" src="data:audio/mpeg;base64,${maybe}"></source>`
-      }
+        {
+          const body = (output as string).trim()
+          if (body.startsWith('MOCK_RESULT:')) {
+            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+            break
+          }
+
+          const blob = await getBlobFromServerOutput(body, 'audio/mpeg')
+          if (blob) {
+            const url = URL.createObjectURL(blob)
+            const audio = document.createElement('audio')
+            audio.controls = true
+            const source = document.createElement('source')
+            source.src = url
+            audio.appendChild(source)
+            audio.onloadedmetadata = () => URL.revokeObjectURL(url)
+            outputClone.appendChild(audio)
+          } else {
+            outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+          }
+        }
       break
     }
     default:
@@ -443,4 +470,87 @@ function escapeHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+// Convert server output into a Blob if possible.
+// Accepts:
+// - full data: URI (data:<mime>;base64,...) -> decodes to Blob
+// - bare base64 string -> decodes to Blob using provided mime
+// - JSON envelope like { mime: 'image/png', dataBase64: '...' } -> Blob
+// Returns Blob or null on failure.
+async function getBlobFromServerOutput(body: string, fallbackMime: string): Promise<Blob | null> {
+  const trimmed = body.trim()
+
+  // JSON envelope? try to parse
+  try {
+    const j = JSON.parse(trimmed)
+    if (j && typeof j === 'object' && (j.dataBase64 || j.data || j.url || j.mime)) {
+      if (j.dataBase64) {
+        const b64 = String(j.dataBase64).replace(/\s+/g, '')
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+        return new Blob([bytes], { type: j.mime || fallbackMime })
+      }
+      if (j.data && typeof j.data === 'string') {
+        // assume base64
+        const b64 = String(j.data).replace(/\s+/g, '')
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+        return new Blob([bytes], { type: j.mime || fallbackMime })
+      }
+      if (j.url && typeof j.url === 'string') {
+        // fetch the resource
+        try {
+          const r = await fetch(j.url)
+          const b = await r.blob()
+          return b
+        } catch (e) {
+          return null
+        }
+      }
+    }
+  } catch (e) {
+    // not JSON
+  }
+
+  // data: URI?
+  const dataUriMatch = trimmed.match(/^data:([^;]+);base64,([A-Za-z0-9+/=\r\n]+)$/)
+  if (dataUriMatch) {
+    const mime = dataUriMatch[1] || fallbackMime
+    const b64 = dataUriMatch[2].replace(/\s+/g, '')
+    try {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+      return new Blob([bytes], { type: mime })
+    } catch (e) {
+      return null
+    }
+  }
+
+  // Maybe contains embedded data URI somewhere
+  const dataUriInner = trimmed.match(/(data:[^\s"']+;base64,[A-Za-z0-9+/=\r\n]+)/)
+  if (dataUriInner) {
+    const match = dataUriInner[1]
+    const m2 = match.match(/^data:([^;]+);base64,([A-Za-z0-9+/=\r\n]+)$/)
+    if (m2) {
+      try {
+        const mime = m2[1] || fallbackMime
+        const b64 = m2[2].replace(/\s+/g, '')
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+        return new Blob([bytes], { type: mime })
+      } catch (e) {
+        return null
+      }
+    }
+  }
+
+  // Bare base64?
+  const cand = trimmed.replace(/\s+/g, '')
+  if (/^[A-Za-z0-9+/=]+$/.test(cand)) {
+    try {
+      const bytes = Uint8Array.from(atob(cand), (c) => c.charCodeAt(0))
+      return new Blob([bytes], { type: fallbackMime })
+    } catch (e) {
+      return null
+    }
+  }
+
+  return null
 }

@@ -11,7 +11,8 @@
     "start:mock:text": "cross-env MOCK_MODE=text node dist/index.js",
     "dev": "node --watch --enable-source-maps dist/index.js",
     "server:start": "sh ./scripts/start-server.sh",
-    "server:stop": "sh ./scripts/stop-server.sh"
+    "server:stop": "sh ./scripts/stop-server.sh",
+    "test": "node scripts/test-e2e.cjs"
   },
   "repository": "git@github.com:butchi/node-wolframscript.git",
   "author": "IWABUCHI Yu(u)ki <butchiyu+com-github@gmail.com>",

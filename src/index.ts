@@ -7,6 +7,7 @@ import { spawn, spawnSync } from 'child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ALLOWED_NAMES, nameToHead } from './func.js'
+import type { BinaryResponse, ExecOutput } from './types.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -52,12 +53,12 @@ app.use(async (ctx: any, next: any) => {
       inArr.push(cmd)
       ee.emit('input', cmd)
 
-      const output = await new Promise<string>((resolve, reject) => {
-        const onMessage = (data: string) => {
+      const output = await new Promise<any>((resolve, reject) => {
+        const onMessage = (data: any) => {
           ee.removeListener('message', onMessage)
           ee.removeListener('error', onError)
           outArr.push(data)
-          resolve(outArr.at(-1) ?? '')
+          resolve(outArr.at(-1))
         }
         const onError = (err: unknown) => {
           ee.removeListener('message', onMessage)
@@ -68,7 +69,15 @@ app.use(async (ctx: any, next: any) => {
         ee.on('error', onError)
       })
 
-      ctx.body = output
+      // If mock returned an object with binary data, set proper content type and body
+      const outVal: ExecOutput = output as ExecOutput
+      if (outVal !== null && outVal !== undefined && typeof outVal === 'object' && (outVal as BinaryResponse).binary) {
+        const outObj = outVal as BinaryResponse
+        if (outObj.mime) ctx.type = outObj.mime
+        ctx.body = outObj.body
+      } else {
+        ctx.body = String(outVal ?? '')
+      }
       return
     } catch (err) {
       console.error('middleware wolfram handling error:', err)
@@ -377,13 +386,23 @@ router.post('/wolfram/exec', async (ctx: any) => {
   ee.emit('input', cmd)
 
   await new Promise<void>((resolve, reject) => {
-    const onMessage = (data: string) => {
+    const onMessage = (data: any) => {
       ee.removeListener('message', onMessage)
       ee.removeListener('error', onError)
 
       outArr.push(data)
       output = outArr.at(-1) ?? ''
-      ctx.body = output
+
+      // if binary-like object, attach mime and body
+      const outVal2: ExecOutput = output as ExecOutput
+      if (outVal2 !== null && outVal2 !== undefined && typeof outVal2 === 'object' && (outVal2 as BinaryResponse).binary) {
+        const outObj = outVal2 as BinaryResponse
+        if (outObj.mime) ctx.type = outObj.mime
+        ctx.body = outObj.body
+      } else {
+        ctx.body = String(outVal2 ?? '')
+      }
+
       resolve()
     }
     const onError = (err: unknown) => {
