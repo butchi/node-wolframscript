@@ -234,6 +234,18 @@ router.get('/wjs.js', async (ctx: any) => {
   }
 })
 
+router.get('/matra.js', async (ctx: any) => {
+  console.log(ctx.method, ctx.url)
+  ctx.type = 'text/javascript'
+  const jsPath = path.join(__dirname, '../dist/matra.js')
+  try {
+    ctx.body = await fs.readFile(jsPath, 'utf8')
+  } catch {
+    const fallback = path.join(__dirname, './matra.js')
+    ctx.body = await fs.readFile(fallback, 'utf8')
+  }
+})
+
 router.post('/wolfram/exec', async (ctx: any) => {
   console.log(ctx.method, ctx.url)
 

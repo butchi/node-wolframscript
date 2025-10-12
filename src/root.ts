@@ -1,6 +1,7 @@
 import * as func from './func.js'
 import type { Action, Expr } from './types.js'
-import { splitTopLevelCommas, parseWjsToken } from './wjs.js'
+// Matra parser replaces previous wjs sugar
+import { parseMatra, matraToExpressionJSON } from './matra.js'
 import { ALLOWED_NAMES, nameToHead } from './func.js'
 
 console.log('Hello, world!')
@@ -43,24 +44,27 @@ for (const key in func) {
   }
 )
 
-// 入力タイプ判定関数
+// 入力タイプ判定関数（Matra対応: デフォルトはMatraとみなす）
 function detectInputType(input: string): string | null {
   const trimmed = input.trim()
   if (!trimmed) return null
   if (/^```([a-zA-Z0-9]*)\n[\s\S]*\n```$/.test(trimmed)) {
     const m = trimmed.match(/^```([a-zA-Z0-9]*)\n/)
     const lang = m && m[1]
-    return lang ? lang.toLowerCase() : 'js'
+    const l = lang ? lang.toLowerCase() : 'js'
+    return l === 'wjs' ? 'matra' : l
   }
   if (/^[a-zA-Z0-9]+`[\s\S]*`$/.test(trimmed)) {
     const m = trimmed.match(/^([a-zA-Z0-9]+)`/)
-    return m ? m[1].toLowerCase() : null
+    const l = m ? m[1].toLowerCase() : null
+    return l === 'wjs' ? 'matra' : l
   }
   if (/^`[\s\S]*`$/.test(trimmed)) return 'js'
   if (/^[a-zA-Z0-9]+`[\s\S]*`$/.test(trimmed)) {
     const m = trimmed.match(/^([a-zA-Z0-9]+)`/)
     const lang = m && m[1]
-    return lang ? lang.toLowerCase() : null
+    const l = lang ? lang.toLowerCase() : null
+    return l === 'wjs' ? 'matra' : l
   }
   if (/^\$\$\n[\s\S]*\n\$\$$/.test(trimmed)) return 'texblock'
   if (/^\$[\s\S]*\$$/.test(trimmed)) return 'tex'
@@ -68,10 +72,11 @@ function detectInputType(input: string): string | null {
     JSON.parse(trimmed)
     return 'json'
   } catch {}
-  return null
+  // 既定はMatraとみなす
+  return 'matra'
 }
 
-// parsing helpers are in src/wjs.ts and imported above
+// Matra parsing helpers are in src/matra.ts and imported above
 
 const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) => {
   const textarea = inputElm.querySelector<HTMLTextAreaElement>('textarea')
@@ -138,39 +143,19 @@ const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) 
       obj = eval(`(${jsStr})`)
       console.log('JavaScript String:', jsStr)
       break
-    case 'wjs':
-      // wjs: light-weight JS-like sugar for calling functions, e.g. plus(1,2)
+    case 'matra':
+      // Matra: tag [attrs]? { [[args]]? }
       jsStr = trimmed
         .replace(/^```[a-zA-Z0-9]*\n/, '')
         .replace(/\n```$/, '')
         .replace(/^[a-zA-Z0-9]+`|`$/g, '')
         .trim()
-
-      // parse simple call: name(arg1,arg2,...)
-      // special-case: W.Head(...) -> treat as raw Wolfram head call
-      if (jsStr.startsWith('W.')) {
-        // Use robust parsing for nested W.Head(...) calls
-        const mm = jsStr.match(/^W\.([a-zA-Z_$][\w$]*)\s*\((.*)\)$/s)
-        if (mm) {
-          const head = mm[1]
-          const inner = mm[2].trim()
-          const parts = inner.length > 0 ? splitTopLevelCommas(inner) : []
-          const args = parts.map((p) => parseWjsToken(p))
-          obj = { head, body: args }
-        } else {
-          console.info('wjs parse failed; not a W.<Head>(...) expression')
-        }
-      } else {
-        const m = jsStr.match(/^([a-zA-Z_$][\w$]*)\s*\((.*)\)$/s)
-        if (m) {
-          const name = m[1]
-          const inner = m[2].trim()
-          const parts = inner.length > 0 ? splitTopLevelCommas(inner) : []
-          const args = parts.map((p) => parseWjsToken(p))
-          obj = { call: name, args }
-        } else {
-          console.info('wjs parse failed; not a call expression')
-        }
+      try {
+        const ast = parseMatra(jsStr)
+        // 旧Expr {head,body} ではなく、Matra ASTを保持
+        obj = ast
+      } catch (e) {
+        console.info('Matra parse failed:', e)
       }
       break
     case 'wolfram':
@@ -195,26 +180,19 @@ const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) 
 
   if (!exprStr) {
     if (obj != null) {
-      // If obj is a call descriptor {call, args}, convert to Expr
-      if (typeof obj === 'object' && obj !== null && 'call' in obj && Array.isArray((obj as any).args)) {
-        const callName = (obj as any).call
-        const callArgs = (obj as any).args
-
-        // whitelist of allowed short-call names is provided by func
-        const allowed = new Set(ALLOWED_NAMES)
-
-        if (typeof callName === 'string' && allowed.has(callName)) {
-          // resolve to canonical head name via func.nameToHead, fallback to camel-case
-          const head = nameToHead(callName) ?? callName[0].toUpperCase() + callName.slice(1)
-          obj = { head, body: callArgs }
-        } else {
-          throw new Error(`Disallowed or invalid call: ${String(callName)}`)
-        }
+      // Matra AST -> ExpressionJSON 配列
+      if (Array.isArray(obj) && typeof obj[0] === 'string') {
+        const ast = obj as any
+        const exprJsonArr = matraToExpressionJSON(ast, { nameToHead })
+        const exprJsonStr = JSON.stringify(exprJsonArr).replace(/"/g, '\\"')
+        exprStr = `ImportString["${exprJsonStr}", "ExpressionJSON"]`
+        cmd = `ExportString[${exprStr}, "ExpressionJSON"]`
+      } else {
+        // JSON/JS raw object/array fallthrough (legacy support)
+        const exprJsonStr = JSON.stringify(obj, replacer as any, 2).replace(/"/g, '\\"')
+        exprStr = `ImportString["${exprJsonStr}", "ExpressionJSON"]`
+        cmd = `ExportString[${exprStr}, "ExpressionJSON"]`
       }
-
-      const exprJsonStr = JSON.stringify(obj, replacer as any, 2).replace(/"/g, '\\"')
-      exprStr = `ImportString["${exprJsonStr}", "ExpressionJSON"]`
-      cmd = `ExportString[${exprStr}, "ExpressionJSON"]`
     } else if (texFragment != null) {
       exprStr = `ToExpression["${texFragment.replaceAll('\\', '\\\\')}", TeXForm]`
       cmd = `ExportString[${exprStr}, "ExpressionJSON"]`
