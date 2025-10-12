@@ -338,15 +338,49 @@ const evaluate = async ({ action }: { action?: Action } = {}) => {
         outputClone.innerHTML = `<pre>${output}</pre>`
       }
       break
-    case 'raster':
-      outputClone.innerHTML = `<img src="data:image/png;base64,${output}" alt="output">`
+    case 'raster': {
+      const body = (output as string).trim()
+      // If server returned the textual mock, show it instead of attempting to build a data URI
+      if (body.startsWith('MOCK_RESULT:')) {
+        outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+        break
+      }
+      const maybe = extractBase64OrDataUri(body)
+      if (maybe.startsWith('data:')) {
+        outputClone.innerHTML = `<img src="${maybe}" alt="output">`
+      } else {
+        outputClone.innerHTML = `<img src="data:image/png;base64,${maybe}" alt="output">`
+      }
       break
-    case 'vector':
-      outputClone.innerHTML = `<img src="data:image/svg+xml;base64,${output}" alt="output">`
+    }
+    case 'vector': {
+      const body = (output as string).trim()
+      if (body.startsWith('MOCK_RESULT:')) {
+        outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+        break
+      }
+      const maybe = extractBase64OrDataUri(body)
+      if (maybe.startsWith('data:')) {
+        outputClone.innerHTML = `<img src="${maybe}" alt="output">`
+      } else {
+        outputClone.innerHTML = `<img src="data:image/svg+xml;base64,${maybe}" alt="output">`
+      }
       break
-    case 'audio':
-      outputClone.innerHTML = `<audio controls><source type="audio/mpeg" src="data:audio/mpeg;base64,${output}"></source>`
+    }
+    case 'audio': {
+      const body = (output as string).trim()
+      if (body.startsWith('MOCK_RESULT:')) {
+        outputClone.innerHTML = `<pre>${escapeHtml(body)}</pre>`
+        break
+      }
+      const maybe = extractBase64OrDataUri(body)
+      if (maybe.startsWith('data:')) {
+        outputClone.innerHTML = `<audio controls><source src="${maybe}"></source>`
+      } else {
+        outputClone.innerHTML = `<audio controls><source type="audio/mpeg" src="data:audio/mpeg;base64,${maybe}"></source>`
+      }
       break
+    }
     default:
       outputClone.innerHTML = output as string
   }
@@ -374,3 +408,39 @@ document.querySelectorAll<HTMLElement>('[data-box-command] .btn').forEach((elm) 
 })
 
 console.log('Thanks, world!')
+
+// Helper: extract either full data: URI or bare base64 payload from server output.
+// Accepts strings like:
+// - 'MOCK_RESULT: <cmd>'
+// - 'data:image/svg+xml;base64,....'
+// - 'PHN2ZyB...' (bare base64)
+function extractBase64OrDataUri(s: string): string {
+  const trimmed = s.trim()
+  // If looks like full data URI, return as-is
+  if (/^data:[a-zA-Z0-9/+.-]+;base64,/.test(trimmed)) return trimmed
+
+  // If prefixed with MOCK_RESULT:, remove leading words up to first whitespace after colon
+  const mockMatch = trimmed.match(/MOCK_RESULT:\s*(.*)$/s)
+  const candidate = mockMatch ? mockMatch[1].trim() : trimmed
+
+  // If candidate contains data:image..., extract that portion
+  const dataUriMatch = candidate.match(/(data:[^\s"']+;base64,[A-Za-z0-9+/=\r\n]+)/)
+  if (dataUriMatch) return dataUriMatch[1]
+
+  // If candidate looks like a base64 string (letters, numbers, +,/ and =), return it
+  const b64 = candidate.replace(/\s+/g, '')
+  if (/^[A-Za-z0-9+/=]+$/.test(b64)) return b64
+
+  // Fallback: return original trimmed string
+  return trimmed
+}
+
+// Simple HTML escaper for safe insertion into innerHTML when showing pre blocks
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}

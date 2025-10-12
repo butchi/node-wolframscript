@@ -170,11 +170,54 @@ try {
 // If wolframscript is not available, install a simple mock responder so the UI can be tested.
 if (!wolframAvailable) {
   console.warn('wolframscript not available — using mock responder for /wolfram/exec')
+  // MOCK_MODE: 'base64' (default) or 'text' to control mock responder shape
+  const mockMode = String(process.env.MOCK_MODE || 'base64').toLowerCase()
+
   ee.on('input', (cmd: string) => {
     // simulate async work and emit a plausible mock response
     setTimeout(() => {
-      const mockResult = `MOCK_RESULT: ${cmd}`
-      ee.emit('message', mockResult)
+      try {
+        const wantsBase64SVG = /"Base64"\s*,\s*"SVG"/i.test(cmd)
+        const wantsBase64PNG = /"Base64"\s*,\s*"PNG"/i.test(cmd)
+        const wantsBase64MP3 = /"Base64"\s*,\s*"MP3"/i.test(cmd)
+
+        if (mockMode === 'base64') {
+          if (wantsBase64SVG) {
+            const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">'
+              + '<rect width="100%" height="100%" fill="#ffffff"/>'
+              + '<circle cx="128" cy="128" r="80" fill="#0d6efd"/>'
+              + '<text x="128" y="140" font-size="24" text-anchor="middle" fill="#ffffff">SVG</text>'
+              + '</svg>'
+              const b64 = Buffer.from(svg, 'utf8').toString('base64')
+              // return a full data URI to more closely match wolframscript output
+              ee.emit('message', `data:image/svg+xml;base64,${b64}`)
+            return
+          }
+          if (wantsBase64PNG) {
+              const png1x1 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII='
+              ee.emit('message', `data:image/png;base64,${png1x1}`)
+            return
+          }
+          if (wantsBase64MP3) {
+              // placeholder for MP3 as an empty data URI (client will handle it)
+              const mp3 = ''
+              ee.emit('message', `data:audio/mpeg;base64,${mp3}`)
+            return
+          }
+
+          // default base64 echo for non-asset commands: return encoded simple text
+          const txt = `MOCK_BASE64_ECHO: ${cmd}`
+          // encode and return a data:text/plain base64 URI so clients receive a data: URI
+          ee.emit('message', `data:text/plain;base64,${Buffer.from(txt, 'utf8').toString('base64')}`)
+          return
+        }
+
+        // text mode (fallback)
+        const mockResult = `MOCK_RESULT: ${cmd}`
+        ee.emit('message', mockResult)
+      } catch (e) {
+        ee.emit('message', `MOCK_RESULT_ERROR: ${String(e)}`)
+      }
     }, 120)
   })
 }
@@ -354,6 +397,7 @@ router.post('/wolfram/exec', async (ctx: any) => {
 })
 
 const port = Number(process.env.PORT) || 3000
-app.listen(port, () => {
+// Bind to 0.0.0.0 so both IPv4 and IPv6 loopback addresses can connect reliably
+app.listen(port, '0.0.0.0', () => {
   console.log(`Server listening on http://localhost:${port}`)
 })

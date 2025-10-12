@@ -53,3 +53,29 @@ PORT=3001 npm run start
 ライセンス
 
 MIT
+
+## 開発用モック (MOCK_MODE)
+
+サーバは `wolframscript` が見つからない場合に mock レスポンダを使用します。開発時は以下の環境変数でモードを切り替えられます:
+
+- `MOCK_MODE=base64`（デフォルト）: 画像や音声を Base64 で返します。ブラウザで直接レンダリングできるので可視化に便利です。
+- `MOCK_MODE=text`: レスポンスを `MOCK_RESULT: <cmd>` のようなテキストにして返します。クライアントはこの場合 `<pre>` で安全に表示します。
+
+PowerShell での単発テスト例:
+
+```powershell
+$env:MOCK_MODE='base64'; node scripts\test-vector-mock.cjs
+
+$env:MOCK_MODE='text'; node scripts\test-vector-mock.cjs
+```
+
+## トラブルシューティング（抜粋）
+
+- ポート競合やサーバが起動しない場合は既存の node を停止して再起動してください:
+
+```powershell
+Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Process -FilePath node -ArgumentList 'dist/index.js' -WorkingDirectory $PWD -WindowStyle Hidden
+```
+
+- ブラウザで古いスクリプトが読み込まれている場合は強制リロード (Ctrl+F5) を行ってください。
