@@ -71,7 +71,13 @@ app.use(async (ctx: any, next: any) => {
 
       // If mock returned an object with binary data, set proper content type and body
       const outVal: ExecOutput = output as ExecOutput
-      if (outVal !== null && outVal !== undefined && typeof outVal === 'object' && (outVal as BinaryResponse).binary) {
+      const looksLikeBinary =
+        outVal !== null &&
+        outVal !== undefined &&
+        typeof outVal === 'object' &&
+        ((outVal as BinaryResponse).binary === true || Buffer.isBuffer((outVal as any).body))
+
+      if (looksLikeBinary) {
         const outObj = outVal as BinaryResponse
         if (outObj.mime) ctx.type = outObj.mime
         ctx.body = outObj.body
@@ -395,7 +401,13 @@ router.post('/wolfram/exec', async (ctx: any) => {
 
       // if binary-like object, attach mime and body
       const outVal2: ExecOutput = output as ExecOutput
-      if (outVal2 !== null && outVal2 !== undefined && typeof outVal2 === 'object' && (outVal2 as BinaryResponse).binary) {
+      const looksLikeBinary2 =
+        outVal2 !== null &&
+        outVal2 !== undefined &&
+        typeof outVal2 === 'object' &&
+        ((outVal2 as BinaryResponse).binary === true || Buffer.isBuffer((outVal2 as any).body))
+
+      if (looksLikeBinary2) {
         const outObj = outVal2 as BinaryResponse
         if (outObj.mime) ctx.type = outObj.mime
         ctx.body = outObj.body
