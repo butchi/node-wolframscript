@@ -7,8 +7,6 @@
   "scripts": {
     "build": "tsc -p .",
     "start": "node dist/index.js",
-    "start:mock:base64": "cross-env MOCK_MODE=base64 node dist/index.js",
-    "start:mock:text": "cross-env MOCK_MODE=text node dist/index.js",
     "dev": "node --watch --enable-source-maps dist/index.js",
     "server:start": "sh ./scripts/start-server.sh",
     "server:stop": "sh ./scripts/stop-server.sh",
