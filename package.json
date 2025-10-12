@@ -2,10 +2,14 @@
   "name": "node-wolframscript.git",
   "version": "0.1.0",
   "description": "Run WolframScript with Node.js",
-  "main": "index.js",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "start": "node index"
+    "build": "tsc -p .",
+    "start": "node dist/index.js",
+    "dev": "node --watch --enable-source-maps dist/index.js",
+    "server:start": "sh ./scripts/start-server.sh",
+    "server:stop": "sh ./scripts/stop-server.sh"
   },
   "repository": "git@github.com:butchi/node-wolframscript.git",
   "author": "IWABUCHI Yu(u)ki <butchiyu+com-github@gmail.com>",
@@ -16,5 +20,9 @@
     "koa": "^2.15.3",
     "koa-body": "^6.0.1",
     "koa2-router": "^2.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "typescript": "^5.6.3"
   }
 }

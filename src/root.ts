@@ -1,35 +1,41 @@
-import * as func from './func.js  '
+import * as func from './func.js'
+import type { Action, Expr } from './types.js'
 
 console.log('Hello, world!')
 
-const mainElm = document.querySelector('main')
-const nbElm = document.querySelector('#nb')
+const mainElm = document.querySelector('main')!
+const nbElm = document.querySelector<HTMLDivElement>('#nb')!
 
-let inputTmpl = document.querySelector('#input')
-let outputTmpl = document.querySelector('#output')
+const inputTmpl = document.querySelector<HTMLTemplateElement>('#input')!
+const outputTmpl = document.querySelector<HTMLTemplateElement>('#output')!
 
-let inputClone = inputTmpl.content.firstElementChild.cloneNode(true)
+let inputClone = inputTmpl.content.firstElementChild!.cloneNode(true) as HTMLElement
 let inputElm = nbElm.appendChild(inputClone)
 
-const contentClone = document.querySelector('#container').content.firstElementChild.cloneNode(true)
-contentClone.querySelector('[data-slot]').appendChild(mainElm)
+const contentClone = (
+  document.querySelector<HTMLTemplateElement>('#container')!.content.firstElementChild! as HTMLElement
+).cloneNode(true) as HTMLElement
+contentClone.querySelector('[data-slot]')!.appendChild(mainElm)
 document.body.appendChild(contentClone)
 
 // for debug
 Object.keys(func).forEach((key) => {
-  globalThis[key] = func[key]
+  // @ts-ignore attach for console debug
+  ;(globalThis as any)[key] = (func as any)[key]
 })
 
 // 入力タイプ判定関数
-function detectInputType(input) {
+function detectInputType(input: string): string | null {
   const trimmed = input.trim()
   if (!trimmed) return null
   if (/^```([a-zA-Z0-9]*)\n[\s\S]*\n```$/.test(trimmed)) {
-    const lang = trimmed.match(/^```([a-zA-Z0-9]*)\n/)[1]
+    const m = trimmed.match(/^```([a-zA-Z0-9]*)\n/)
+    const lang = m && m[1]
     return lang ? lang.toLowerCase() : 'js'
   }
   if (/^[a-zA-Z0-9]+`[\s\S]*`$/.test(trimmed)) {
-    return trimmed.match(/^([a-zA-Z0-9]+)`/)[1].toLowerCase()
+    const m = trimmed.match(/^([a-zA-Z0-9]+)`/)
+    return m ? m[1].toLowerCase() : null
   }
   if (/^`[\s\S]*`$/.test(trimmed)) return 'js'
   if (/^\$\$\n[\s\S]*\n\$\$$/.test(trimmed)) return 'texblock'
@@ -41,28 +47,32 @@ function detectInputType(input) {
   return null
 }
 
-const evaluate = async ({ action } = { action: 'vector' }) => {
-  const input = inputElm.querySelector('textarea').value
+const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) => {
+  const textarea = inputElm.querySelector<HTMLTextAreaElement>('textarea')
+  const input = textarea?.value ?? ''
   if (!input?.trim()) return
-  inputElm.querySelector('textarea').disabled = true
+  if (textarea) textarea.disabled = true
   console.log('Action:', action)
   console.log('Input:', input)
 
-  let obj,
+  let obj: unknown,
     exprStr = '',
     cmd = ''
-  let jsonStr, jsStr, texFragment, wolframStr
-  let jsonObj, exprJsonObj
+  let jsonStr: string | undefined,
+    jsStr: string | undefined,
+    texFragment: string | undefined,
+    wolframStr: string | undefined
+  let jsonObj: unknown, exprJsonObj: unknown
 
-  const replacer = (_key, value) => {
+  const replacer = (_key: string, value: unknown) => {
     if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      const keys = Object.keys(value)
-      if (keys.length === 2 && keys.includes('head') && keys.includes('body') && Array.isArray(value.body)) {
-        if (value.body.length === 0) return value.head
-        return [value.head, ...value.body]
+      const keys = Object.keys(value as Record<string, unknown>)
+      if (keys.length === 2 && keys.includes('head') && keys.includes('body') && Array.isArray((value as any).body)) {
+        if ((value as any).body.length === 0) return (value as any).head
+        return [(value as any).head, ...(value as any).body]
       }
     }
-    return value
+    return value as any
   }
 
   // 入力タイプ判定
@@ -81,7 +91,7 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
           .trim()
         jsonObj = JSON.parse(str)
         try {
-          exprJsonObj = JSON.parse(jsonObj)
+          exprJsonObj = JSON.parse(jsonObj as string)
           obj = exprJsonObj
         } catch {
           obj = jsonObj
@@ -98,6 +108,7 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
         .replace(/\n```$/, '')
         .replace(/^[a-zA-Z0-9]+`|`$/g, '')
         .trim()
+      // eslint-disable-next-line no-eval
       obj = eval(`(${jsStr})`)
       console.log('JavaScript String:', jsStr)
       break
@@ -117,21 +128,13 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
     case 'texblock':
       texFragment = trimmed.slice(3, -3).trim()
       break
-    // // STUB
-    // case 'matra':
-    //   jsStr = trimmed
-    //     .replace(/^```[a-zA-Z0-9]*\n/, '')
-    //     .replace(/\n```$/, '')
-    //     .trim()
-    //   obj = eval(`(${jsStr})`)
-    //   break
     default:
       console.log('Invalid input format, expected JSON, JavaScript, or TeX Fragment')
   }
 
   if (!exprStr) {
     if (obj != null) {
-      const exprJsonStr = JSON.stringify(obj, replacer, 2).replace(/"/g, '\\"')
+      const exprJsonStr = JSON.stringify(obj, replacer as any, 2).replace(/"/g, '\\"')
       exprStr = `ImportString["${exprJsonStr}", "ExpressionJSON"]`
       cmd = `ExportString[${exprStr}, "ExpressionJSON"]`
     } else if (texFragment != null) {
@@ -142,7 +145,7 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
 
   // アクションごとのコマンド生成
   if (action) {
-    const actionMap = {
+    const actionMap: Record<string, string> = {
       json: `ExportString[${exprStr}, "ExpressionJSON"]`,
       mathml: `ExportString[${exprStr}, "MathML"]`,
       tex: `ExportString[${exprStr}, "TeXFragment"]`,
@@ -157,11 +160,12 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
   console.log('Command:', cmd)
   const res = await fetch('/wolfram/exec', {
     method: 'post',
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ command: encodeURIComponent(cmd) }),
   })
   const output = await res.text()
   console.log(output)
-  const outputClone = outputTmpl.content.firstElementChild.cloneNode(true)
+  const outputClone = outputTmpl.content.firstElementChild!.cloneNode(true) as HTMLElement
 
   // 出力処理
   switch (action) {
@@ -185,28 +189,28 @@ const evaluate = async ({ action } = { action: 'vector' }) => {
       outputClone.innerHTML = `<audio controls><source type="audio/mpeg" src="data:audio/mpeg;base64,${output}"></source>`
       break
     default:
-      outputClone.innerHTML = output
+      outputClone.innerHTML = output as string
   }
 
   nbElm.appendChild(outputClone)
-  inputClone = inputTmpl.content.firstElementChild.cloneNode(true)
+  inputClone = inputTmpl.content.firstElementChild!.cloneNode(true) as HTMLElement
   inputElm = nbElm.appendChild(inputClone)
-  inputElm.querySelector('textarea').focus()
+  inputElm.querySelector<HTMLTextAreaElement>('textarea')?.focus()
 }
 
 globalThis.addEventListener('keydown', async (evt) => {
-  if (evt.shiftKey && evt.key === 'Enter') {
+  if ((evt as KeyboardEvent).shiftKey && (evt as KeyboardEvent).key === 'Enter') {
     evt.preventDefault()
 
     evaluate()
   }
 })
 
-document.querySelectorAll('[data-box-command] .btn').forEach((elm) => {
+document.querySelectorAll<HTMLElement>('[data-box-command] .btn').forEach((elm) => {
   elm.addEventListener('click', (_) => {
-    const action = elm.getAttribute('data-action')
+    const action = elm.getAttribute('data-action') as Action | null
 
-    evaluate({ action })
+    evaluate({ action: (action ?? undefined) as Action })
   })
 })
 
