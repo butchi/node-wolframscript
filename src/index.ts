@@ -214,9 +214,56 @@ if (!wolframAvailable) {
             return
           }
           if (wantsBase64MP3) {
-              // placeholder for MP3 as an empty data URI (client will handle it)
-              const mp3 = ''
-              ee.emit('message', `data:audio/mpeg;base64,${mp3}`)
+              // generate a short 1s sine wave WAV (PCM 16-bit 44.1kHz) and return as data:audio/wav;base64,
+              try {
+                const sampleRate = 44100
+                const duration = 1 // seconds
+                const freq = 440
+                const numSamples = sampleRate * duration
+                const samples = Buffer.alloc(numSamples * 2) // 16-bit PCM
+                for (let i = 0; i < numSamples; i++) {
+                  const t = i / sampleRate
+                  const v = Math.sin(2 * Math.PI * freq * t)
+                  const s = Math.max(-1, Math.min(1, v))
+                  const intSample = Math.round(s * 32767)
+                  samples.writeInt16LE(intSample, i * 2)
+                }
+
+                // WAV header (PCM)
+                const header = Buffer.alloc(44)
+                // ChunkID 'RIFF'
+                header.write('RIFF', 0)
+                // ChunkSize 36 + Subchunk2Size
+                header.writeUInt32LE(36 + samples.length, 4)
+                // Format 'WAVE'
+                header.write('WAVE', 8)
+                // Subchunk1ID 'fmt '
+                header.write('fmt ', 12)
+                // Subchunk1Size 16 for PCM
+                header.writeUInt32LE(16, 16)
+                // AudioFormat 1 (PCM)
+                header.writeUInt16LE(1, 20)
+                // NumChannels 1
+                header.writeUInt16LE(1, 22)
+                // SampleRate
+                header.writeUInt32LE(sampleRate, 24)
+                // ByteRate = SampleRate * NumChannels * BitsPerSample/8
+                header.writeUInt32LE(sampleRate * 1 * 16 / 8, 28)
+                // BlockAlign = NumChannels * BitsPerSample/8
+                header.writeUInt16LE(1 * 16 / 8, 32)
+                // BitsPerSample
+                header.writeUInt16LE(16, 34)
+                // Subchunk2ID 'data'
+                header.write('data', 36)
+                // Subchunk2Size
+                header.writeUInt32LE(samples.length, 40)
+
+                const wav = Buffer.concat([header, samples])
+                const b64 = wav.toString('base64')
+                ee.emit('message', `data:audio/wav;base64,${b64}`)
+              } catch (e) {
+                ee.emit('message', `MOCK_RESULT_ERROR: ${String(e)}`)
+              }
             return
           }
 
