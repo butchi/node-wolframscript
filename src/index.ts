@@ -7,7 +7,6 @@ import { spawn, spawnSync } from 'child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ALLOWED_NAMES, nameToHead } from './func.js'
-import zlib from 'node:zlib'
 import type { BinaryResponse, ExecOutput } from './types.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -21,6 +20,11 @@ const router = new Router()
 // raw request body and parse it robustly.
 app.use(async (ctx: any, next: any) => {
   if (ctx.path === '/wolfram/exec' && ctx.method === 'POST') {
+    if (!wolframAvailable) {
+      ctx.status = 503
+      ctx.body = 'Wolfram Engine unavailable'
+      return
+    }
     const raw = await new Promise<string>((resolve) => {
       let data = ''
       ctx.req.on('data', (chunk: Buffer) => (data += chunk.toString('utf8')))
@@ -144,326 +148,54 @@ const trimRegExp = /[\\\r\n\s]+\>?[\\\r\n\s]+/g
 let wolframAvailable = false
 let wolframscriptProcess: ReturnType<typeof spawn> | undefined
 
-// --- PNG helper (for mock PNG generation) ---
-function crc32(buf: Buffer): number {
-  let c = ~0 >>> 0
-  for (let i = 0; i < buf.length; i++) {
-    c ^= buf[i]
-    for (let k = 0; k < 8; k++) {
-      const m = -(c & 1)
-      c = (c >>> 1) ^ (0xEDB88320 & m)
-    }
-  }
-  return (~c) >>> 0
-}
+// Start wolframscript REPL if available. Supports env override WOLFRAMSCRIPT.
+function startWolfram() {
+  const exe = process.env.WOLFRAMSCRIPT && process.env.WOLFRAMSCRIPT.trim().length > 0
+    ? process.env.WOLFRAMSCRIPT.trim()
+    : 'wolframscript'
+  try {
+    wolframscriptProcess = spawn(exe, ['-i'])
+    wolframscriptProcess.stdout.setEncoding('utf8')
+    wolframAvailable = true
 
-function pngChunk(type: string, data: Buffer): Buffer {
-  const len = Buffer.alloc(4)
-  len.writeUInt32BE(data.length, 0)
-  const typeBuf = Buffer.from(type, 'ascii')
-  const crcInput = Buffer.concat([typeBuf, data])
-  const crc = Buffer.alloc(4)
-  crc.writeUInt32BE(crc32(crcInput), 0)
-  return Buffer.concat([len, typeBuf, data, crc])
-}
-
-function makeSolidPng(width: number, height: number, rgb: [number, number, number]): Buffer {
-  const sig = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
-  const ihdr = Buffer.alloc(13)
-  ihdr.writeUInt32BE(width, 0)
-  ihdr.writeUInt32BE(height, 4)
-  ihdr.writeUInt8(8, 8) // bit depth
-  ihdr.writeUInt8(2, 9) // color type: truecolor
-  ihdr.writeUInt8(0, 10) // compression
-  ihdr.writeUInt8(0, 11) // filter
-  ihdr.writeUInt8(0, 12) // interlace
-  const ihdrChunk = pngChunk('IHDR', ihdr)
-
-  const rowLen = 1 + width * 3 // filter byte + RGB per pixel
-  const raw = Buffer.alloc(rowLen * height)
-  for (let y = 0; y < height; y++) {
-    const rowStart = y * rowLen
-    raw[rowStart] = 0 // filter 0 (None)
-    for (let x = 0; x < width; x++) {
-      const i = rowStart + 1 + x * 3
-      raw[i] = rgb[0]
-      raw[i + 1] = rgb[1]
-      raw[i + 2] = rgb[2]
-    }
-  }
-  const compressed = zlib.deflateSync(raw)
-  const idatChunk = pngChunk('IDAT', compressed)
-  const iendChunk = pngChunk('IEND', Buffer.alloc(0))
-  return Buffer.concat([sig, ihdrChunk, idatChunk, iendChunk])
-}
-
-// Very simple PNG plot generator for mock: draws axes and a sampled curve
-function makePlotPng(width: number, height: number, opts: { fn: (x: number) => number; xMin: number; xMax: number }): Buffer {
-  const sig = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])
-  const ihdr = Buffer.alloc(13)
-  ihdr.writeUInt32BE(width, 0)
-  ihdr.writeUInt32BE(height, 4)
-  ihdr.writeUInt8(8, 8)
-  ihdr.writeUInt8(2, 9)
-  ihdr.writeUInt8(0, 10)
-  ihdr.writeUInt8(0, 11)
-  ihdr.writeUInt8(0, 12)
-  const ihdrChunk = pngChunk('IHDR', ihdr)
-
-  // raw RGB rows with filter byte per row
-  const rowLen = 1 + width * 3
-  const raw = Buffer.alloc(rowLen * height, 0)
-  // fill white background
-  for (let y = 0; y < height; y++) {
-    const rowStart = y * rowLen
-    raw[rowStart] = 0
-    for (let x = 0; x < width; x++) {
-      const i = rowStart + 1 + x * 3
-      raw[i] = 255; raw[i + 1] = 255; raw[i + 2] = 255
-    }
-  }
-
-  const putPixel = (x: number, y: number, r: number, g: number, b: number) => {
-    if (x < 0 || y < 0 || x >= width || y >= height) return
-    const rowStart = y * rowLen
-    const i = rowStart + 1 + x * 3
-    raw[i] = r; raw[i + 1] = g; raw[i + 2] = b
-  }
-  const drawLine = (x0: number, y0: number, x1: number, y1: number, col: [number, number, number]) => {
-    x0 |= 0; y0 |= 0; x1 |= 0; y1 |= 0
-    const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1
-    const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1
-    let err = dx + dy
-    while (true) {
-      putPixel(x0, y0, col[0], col[1], col[2])
-      if (x0 === x1 && y0 === y1) break
-      const e2 = 2 * err
-      if (e2 >= dy) { err += dy; x0 += sx }
-      if (e2 <= dx) { err += dx; y0 += sy }
-    }
-  }
-
-  const { fn, xMin, xMax } = opts
-  // sample function to determine y-range
-  const samples = 512
-  const xs: number[] = []
-  const ys: number[] = []
-  let yMin = Number.POSITIVE_INFINITY, yMax = Number.NEGATIVE_INFINITY
-  for (let i = 0; i < samples; i++) {
-    const t = i / (samples - 1)
-    const x = xMin + (xMax - xMin) * t
-    const y = fn(x)
-    xs.push(x); ys.push(y)
-    if (isFinite(y)) { if (y < yMin) yMin = y; if (y > yMax) yMax = y }
-  }
-  if (!isFinite(yMin) || !isFinite(yMax) || yMin === yMax) { yMin = -1; yMax = 1 }
-  // add margins
-  const yPad = (yMax - yMin) * 0.1 || 1
-  yMin -= yPad; yMax += yPad
-
-  // map function to pixel coords
-  const toX = (x: number) => Math.round((x - xMin) / (xMax - xMin) * (width - 1))
-  const toY = (y: number) => Math.round((1 - (y - yMin) / (yMax - yMin)) * (height - 1))
-
-  // axes (grey)
-  const zeroX = (0 >= xMin && 0 <= xMax) ? toX(0) : -1
-  const zeroY = (0 >= yMin && 0 <= yMax) ? toY(0) : -1
-  if (zeroX >= 0) drawLine(zeroX, 0, zeroX, height - 1, [200, 200, 200])
-  if (zeroY >= 0) drawLine(0, zeroY, width - 1, zeroY, [200, 200, 200])
-
-  // curve (blue)
-  let px = toX(xs[0]); let py = toY(ys[0])
-  for (let i = 1; i < samples; i++) {
-    const qx = toX(xs[i]); const qy = toY(ys[i])
-    if (isFinite(ys[i - 1]) && isFinite(ys[i])) drawLine(px, py, qx, qy, [13, 110, 253])
-    px = qx; py = qy
-  }
-
-  const compressed = zlib.deflateSync(raw)
-  const idatChunk = pngChunk('IDAT', compressed)
-  const iendChunk = pngChunk('IEND', Buffer.alloc(0))
-  return Buffer.concat([sig, ihdrChunk, idatChunk, iendChunk])
-}
-
-// Check whether `wolframscript` is available on PATH before spawning.
-try {
-  const check = spawnSync('which', ['wolframscript'])
-  if (check.status === 0) {
-    try {
-      wolframscriptProcess = spawn('wolframscript', ['-i'])
-      wolframscriptProcess.stdout.setEncoding('utf8')
-      wolframAvailable = true
-
-      wolframscriptProcess.on('error', (err) => {
-        console.error('wolframscript spawn error:', err)
-        ee.emit('error', err)
-      })
-
-      wolframscriptProcess.stdout.on('data', (data: string) => {
-        console.log('data:', data)
-
-        if (data.match(outRegExp) && data.match(inRegExp)) {
-          curData = data.replace(outRegExp, '').replace(inRegExp, '').replaceAll(trimRegExp, '')
-
-          ee.emit('message', curData)
-
-          curData = ''
-        } else if (data.match(outRegExp)) {
-          curData += data.replace(outRegExp, '').replaceAll(trimRegExp, '')
-        } else if (data.match(inRegExp)) {
-          curData += data.replace(inRegExp, '').replaceAll(trimRegExp, '')
-
-          ee.emit('message', curData)
-
-          curData = ''
-        } else {
-          curData += data.replaceAll(trimRegExp, '')
-        }
-      })
-
-      ee.on('input', (cmd: string) => {
-        if (wolframscriptProcess?.stdin) wolframscriptProcess.stdin.write(`${cmd}\n`)
-      })
-    } catch (err) {
-      console.log('wolframscript spawn failed:', err)
+    wolframscriptProcess.on('error', (err) => {
+      console.error('wolframscript spawn error:', err)
       wolframAvailable = false
-    }
-  } else {
-    console.log('wolframscript not found on PATH')
+      ee.emit('error', err)
+    })
+
+    wolframscriptProcess.stdout.on('data', (data: string) => {
+      console.log('data:', data)
+
+      if (data.match(outRegExp) && data.match(inRegExp)) {
+        curData = data.replace(outRegExp, '').replace(inRegExp, '').replaceAll(trimRegExp, '')
+
+        ee.emit('message', curData)
+
+        curData = ''
+      } else if (data.match(outRegExp)) {
+        curData += data.replace(outRegExp, '').replaceAll(trimRegExp, '')
+      } else if (data.match(inRegExp)) {
+        curData += data.replace(inRegExp, '').replaceAll(trimRegExp, '')
+
+        ee.emit('message', curData)
+
+        curData = ''
+      } else {
+        curData += data.replaceAll(trimRegExp, '')
+      }
+    })
+
+    ee.on('input', (cmd: string) => {
+      if (wolframscriptProcess?.stdin) wolframscriptProcess.stdin.write(`${cmd}\n`)
+    })
+  } catch (err) {
+    console.log('wolframscript spawn failed:', err)
     wolframAvailable = false
   }
-} catch (err) {
-  console.log('failed to check wolframscript availability:', err)
-  wolframAvailable = false
 }
 
-// If wolframscript is not available, install a simple mock responder so the UI can be tested.
-if (!wolframAvailable) {
-  console.warn('wolframscript not available — using mock responder for /wolfram/exec')
-  // MOCK_MODE: 'base64' (default) or 'text' to control mock responder shape
-  const mockMode = String(process.env.MOCK_MODE || 'base64').toLowerCase()
-
-  ee.on('input', (cmd: string) => {
-    // simulate async work and emit a plausible mock response
-    setTimeout(() => {
-      try {
-        const wantsBase64SVG = /"Base64"\s*,\s*"SVG"/i.test(cmd)
-        const wantsBase64PNG = /"Base64"\s*,\s*"PNG"/i.test(cmd)
-        const wantsBase64MP3 = /"Base64"\s*,\s*"MP3"/i.test(cmd)
-
-        if (mockMode === 'base64') {
-          if (wantsBase64SVG) {
-            const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">'
-              + '<rect width="100%" height="100%" fill="#ffffff"/>'
-              + '<circle cx="128" cy="128" r="80" fill="#0d6efd"/>'
-              + '<text x="128" y="140" font-size="24" text-anchor="middle" fill="#ffffff">SVG</text>'
-              + '</svg>'
-              const b64 = Buffer.from(svg, 'utf8').toString('base64')
-              // return a full data URI to more closely match wolframscript output
-              ee.emit('message', `data:image/svg+xml;base64,${b64}`)
-            return
-          }
-          if (wantsBase64PNG) {
-              // If looks like Plot[ f[var], {var,a,b} ] then draw a simple plot
-              const plotMatch = cmd.match(/Plot\[\s*([\s\S]+?)\s*,\s*\{\s*([a-zA-Z][\w]*)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\}\s*\]/)
-              if (plotMatch) {
-                const expr = plotMatch[1]
-                const varName = plotMatch[2]
-                const a = parseFloat(plotMatch[3]); const b = parseFloat(plotMatch[4])
-                // support a couple of simple forms: var^2, Sin[var], Cos[var]
-                let fn: (x: number) => number
-                try {
-                  const reSin = new RegExp(`\\bSin\\s*\\[\\s*${varName}\\s*\\]`)
-                  const reCos = new RegExp(`\\bCos\\s*\\[\\s*${varName}\\s*\\]`)
-                  const reSq = new RegExp(`\\b${varName}\\s*\\^\\s*2\\b`)
-                  if (reSin.test(expr)) fn = Math.sin
-                  else if (reCos.test(expr)) fn = Math.cos
-                  else if (reSq.test(expr)) fn = (x) => x * x
-                  else fn = (x) => Math.sin(x)
-                } catch {
-                  fn = (x) => Math.sin(x)
-                }
-                const png = makePlotPng(512, 384, { fn, xMin: a, xMax: b })
-                const b64 = png.toString('base64')
-                ee.emit('message', `data:image/png;base64,${b64}`)
-              } else {
-                // fallback: visible solid
-                const png = makeSolidPng(256, 256, [13, 110, 253])
-                const b64 = png.toString('base64')
-                ee.emit('message', `data:image/png;base64,${b64}`)
-              }
-            return
-          }
-          if (wantsBase64MP3) {
-              // generate a short 1s sine wave WAV (PCM 16-bit 44.1kHz) and return as data:audio/wav;base64,
-              try {
-                const sampleRate = 44100
-                const duration = 1 // seconds
-                const freq = 440
-                const numSamples = sampleRate * duration
-                const samples = Buffer.alloc(numSamples * 2) // 16-bit PCM
-                for (let i = 0; i < numSamples; i++) {
-                  const t = i / sampleRate
-                  const v = Math.sin(2 * Math.PI * freq * t)
-                  const s = Math.max(-1, Math.min(1, v))
-                  const intSample = Math.round(s * 32767)
-                  samples.writeInt16LE(intSample, i * 2)
-                }
-
-                // WAV header (PCM)
-                const header = Buffer.alloc(44)
-                // ChunkID 'RIFF'
-                header.write('RIFF', 0)
-                // ChunkSize 36 + Subchunk2Size
-                header.writeUInt32LE(36 + samples.length, 4)
-                // Format 'WAVE'
-                header.write('WAVE', 8)
-                // Subchunk1ID 'fmt '
-                header.write('fmt ', 12)
-                // Subchunk1Size 16 for PCM
-                header.writeUInt32LE(16, 16)
-                // AudioFormat 1 (PCM)
-                header.writeUInt16LE(1, 20)
-                // NumChannels 1
-                header.writeUInt16LE(1, 22)
-                // SampleRate
-                header.writeUInt32LE(sampleRate, 24)
-                // ByteRate = SampleRate * NumChannels * BitsPerSample/8
-                header.writeUInt32LE(sampleRate * 1 * 16 / 8, 28)
-                // BlockAlign = NumChannels * BitsPerSample/8
-                header.writeUInt16LE(1 * 16 / 8, 32)
-                // BitsPerSample
-                header.writeUInt16LE(16, 34)
-                // Subchunk2ID 'data'
-                header.write('data', 36)
-                // Subchunk2Size
-                header.writeUInt32LE(samples.length, 40)
-
-                const wav = Buffer.concat([header, samples])
-                const b64 = wav.toString('base64')
-                ee.emit('message', `data:audio/wav;base64,${b64}`)
-              } catch (e) {
-                ee.emit('message', `MOCK_RESULT_ERROR: ${String(e)}`)
-              }
-            return
-          }
-
-          // default base64 echo for non-asset commands: return encoded simple text
-          const txt = `MOCK_BASE64_ECHO: ${cmd}`
-          // encode and return a data:text/plain base64 URI so clients receive a data: URI
-          ee.emit('message', `data:text/plain;base64,${Buffer.from(txt, 'utf8').toString('base64')}`)
-          return
-        }
-
-        // text mode (fallback)
-        const mockResult = `MOCK_RESULT: ${cmd}`
-        ee.emit('message', mockResult)
-      } catch (e) {
-        ee.emit('message', `MOCK_RESULT_ERROR: ${String(e)}`)
-      }
-    }, 120)
-  })
-}
+startWolfram()
 
 router.get('/', async (ctx: any) => {
   console.log(ctx.method, ctx.url)
@@ -679,27 +411,19 @@ router.post('/wolfram/transform', async (ctx: any) => {
     return
   }
 
-  // Mock responder for transform when wolfram is not available
-  const mime = mimeForFormat(format)
-  if (mime === 'image/png') {
-    // Return a visible 256x256 solid PNG as binary Buffer (mock)
-    const png = makeSolidPng(256, 256, [13, 110, 253]) // #0d6efd
-    ctx.type = 'image/png'
-    ctx.body = png
-    return
-  }
-
-  // Default mock: echo back ExpressionJSON or text as data URI text/plain
-  const txt = `MOCK_TRANSFORM: ${cmd}`
+  // Engine unavailable: return 503 so the client can surface the error
+  ctx.status = 503
   ctx.type = 'text/plain; charset=utf-8'
-  ctx.body = txt
+  ctx.body = 'Wolfram Engine unavailable'
 })
 
 router.post('/wolfram/exec', async (ctx: any) => {
   console.log(ctx.method, ctx.url)
 
   if (!wolframAvailable) {
-    console.warn('wolframscript not available — using mock responder')
+    ctx.status = 503
+    ctx.body = 'Wolfram Engine unavailable'
+    return
   }
 
   let output = ''
