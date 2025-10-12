@@ -6,6 +6,7 @@ import EventEmitter from 'events'
 import { spawn, spawnSync } from 'child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ALLOWED_NAMES, nameToHead } from './func.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -221,6 +222,18 @@ router.get('/func.js', async (ctx: any) => {
   }
 })
 
+router.get('/wjs.js', async (ctx: any) => {
+  console.log(ctx.method, ctx.url)
+  ctx.type = 'text/javascript'
+  const jsPath = path.join(__dirname, '../dist/wjs.js')
+  try {
+    ctx.body = await fs.readFile(jsPath, 'utf8')
+  } catch {
+    const fallback = path.join(__dirname, './wjs.js')
+    ctx.body = await fs.readFile(fallback, 'utf8')
+  }
+})
+
 router.post('/wolfram/exec', async (ctx: any) => {
   console.log(ctx.method, ctx.url)
 
@@ -240,6 +253,69 @@ router.post('/wolfram/exec', async (ctx: any) => {
   const bodyObj = typeof ctx.request.body === 'string' ? JSON.parse(ctx.request.body) : ctx.request.body
 
   const cmd: string = decodeURIComponent(bodyObj.command)
+
+  // Server-side whitelist for ExpressionJSON heads.
+  // By default only heads exposed via ALLOWED_NAMES are allowed. This can be
+  // relaxed by setting ALLOW_ALL_W=true or by specifying ALLOWED_W_HEADS as a
+  // comma-separated list of canonical head names (e.g. "Plus,Times,N").
+  try {
+    const allowAll = String(process.env.ALLOW_ALL_W || '').toLowerCase() === 'true'
+    const extra = (process.env.ALLOWED_W_HEADS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+
+    // compute allowed canonical head names (e.g. 'plus' -> 'Plus')
+    const allowedCanonical = new Set<string>()
+    for (const n of ALLOWED_NAMES) {
+      const head = nameToHead(n) ?? n[0].toUpperCase() + n.slice(1)
+      allowedCanonical.add(head)
+    }
+    for (const h of extra) allowedCanonical.add(h)
+
+    // helper: extract ExpressionJSON payload from ImportString["...","ExpressionJSON"]
+    const m = cmd.match(/ImportString\["([\s\S]*?)",\s*"ExpressionJSON"\]/)
+    if (!allowAll && m) {
+      const innerEscaped = m[1]
+      // unescape the client-side escape of quotes (client replaces " with \" before embedding)
+      const jsonText = innerEscaped.replace(/\\"/g, '"')
+      let expr: unknown = null
+      try {
+        expr = JSON.parse(jsonText)
+      } catch (e) {
+        console.warn('Failed to parse ExpressionJSON payload for whitelist check', e)
+        // If we can't parse, be conservative and reject
+        ctx.status = 400
+        ctx.body = 'Bad Request: cannot parse ExpressionJSON payload'
+        return
+      }
+
+      // collect heads recursively
+      const heads = new Set<string>()
+      const collect = (node: any) => {
+        if (Array.isArray(node) && node.length > 0) {
+          const head = node[0]
+          if (typeof head === 'string') heads.add(head)
+          for (let i = 1; i < node.length; i++) collect(node[i])
+        }
+      }
+      collect(expr)
+
+      for (const h of heads) {
+        if (!allowedCanonical.has(h)) {
+          console.warn('Blocked disallowed head in request:', h)
+          ctx.status = 403
+          ctx.body = `Forbidden: usage of head ${h} is not allowed`
+          return
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error during whitelist check:', e)
+    ctx.status = 500
+    ctx.body = 'Internal Server Error'
+    return
+  }
 
   inArr.push(cmd)
 

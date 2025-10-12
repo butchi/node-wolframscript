@@ -1,5 +1,7 @@
 import * as func from './func.js'
 import type { Action, Expr } from './types.js'
+import { splitTopLevelCommas, parseWjsToken } from './wjs.js'
+import { ALLOWED_NAMES, nameToHead } from './func.js'
 
 console.log('Hello, world!')
 
@@ -18,11 +20,28 @@ const contentClone = (
 contentClone.querySelector('[data-slot]')!.appendChild(mainElm)
 document.body.appendChild(contentClone)
 
-// for debug
-Object.keys(func).forEach((key) => {
-  // @ts-ignore attach for console debug
-  ;(globalThis as any)[key] = (func as any)[key]
-})
+// for debug: expose individual function names and the namespace on globalThis
+for (const key in func) {
+  if (Object.prototype.hasOwnProperty.call(func, key)) {
+    // @ts-ignore attach for console debug
+    ;(globalThis as any)[key] = (func as any)[key]
+  }
+}
+// also expose the namespace for convenience
+// @ts-ignore
+;(globalThis as any).func = func
+// expose W.<Head>(...) sugar via a Proxy so arbitrary heads need not be predeclared
+// @ts-ignore
+;(globalThis as any).W = new Proxy(
+  {},
+  {
+    // property access: W.Plus -> returns a caller for head 'Plus'
+    get: (_target, prop) => {
+      if (typeof prop === 'string') return (func as any).W(prop)
+      return undefined
+    },
+  }
+)
 
 // 入力タイプ判定関数
 function detectInputType(input: string): string | null {
@@ -51,6 +70,8 @@ function detectInputType(input: string): string | null {
   } catch {}
   return null
 }
+
+// parsing helpers are in src/wjs.ts and imported above
 
 const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) => {
   const textarea = inputElm.querySelector<HTMLTextAreaElement>('textarea')
@@ -126,33 +147,30 @@ const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) 
         .trim()
 
       // parse simple call: name(arg1,arg2,...)
-      const callRe = /^([a-zA-Z_$][\w$]*)\s*\((.*)\)$/s
-      const m = jsStr.match(callRe)
-      if (m) {
-        const name = m[1]
-        const argsText = m[2].trim()
-        let args: unknown[] = []
-        if (argsText.length > 0) {
-          // try to parse as JSON array by wrapping
-          try {
-            args = JSON.parse(`[${argsText}]`)
-          } catch {
-            // fallback: split on commas (very simple, no nested commas)
-            args = argsText.split(',').map((s) => {
-              const t = s.trim()
-              if (/^\d+$/.test(t)) return Number(t)
-              try {
-                return JSON.parse(t)
-              } catch {
-                return t
-              }
-            })
-          }
+      // special-case: W.Head(...) -> treat as raw Wolfram head call
+      if (jsStr.startsWith('W.')) {
+        // Use robust parsing for nested W.Head(...) calls
+        const mm = jsStr.match(/^W\.([a-zA-Z_$][\w$]*)\s*\((.*)\)$/s)
+        if (mm) {
+          const head = mm[1]
+          const inner = mm[2].trim()
+          const parts = inner.length > 0 ? splitTopLevelCommas(inner) : []
+          const args = parts.map((p) => parseWjsToken(p))
+          obj = { head, body: args }
+        } else {
+          console.info('wjs parse failed; not a W.<Head>(...) expression')
         }
-
-        obj = { call: name, args }
       } else {
-        console.info('wjs parse failed; not a call expression')
+        const m = jsStr.match(/^([a-zA-Z_$][\w$]*)\s*\((.*)\)$/s)
+        if (m) {
+          const name = m[1]
+          const inner = m[2].trim()
+          const parts = inner.length > 0 ? splitTopLevelCommas(inner) : []
+          const args = parts.map((p) => parseWjsToken(p))
+          obj = { call: name, args }
+        } else {
+          console.info('wjs parse failed; not a call expression')
+        }
       }
       break
     case 'wolfram':
@@ -182,20 +200,12 @@ const evaluate = async ({ action }: { action?: Action } = { action: 'vector' }) 
         const callName = (obj as any).call
         const callArgs = (obj as any).args
 
-        // whitelist of allowed short-call names
-        const allowed = new Set(['plus', 'times', 'sin', 'cos', 'sqrt', 'random', 'power', 'divide', 'minus'])
-
-        const overrides: Record<string, string> = {
-          random: 'RandomReal',
-          factorInt: 'FactorInteger',
-          lucas: 'LucasL',
-          bernoulli: 'BernoulliB',
-          euler: 'EulerE',
-          nm: 'N',
-        }
+        // whitelist of allowed short-call names is provided by func
+        const allowed = new Set(ALLOWED_NAMES)
 
         if (typeof callName === 'string' && allowed.has(callName)) {
-          const head = overrides[callName] ?? callName[0].toUpperCase() + callName.slice(1)
+          // resolve to canonical head name via func.nameToHead, fallback to camel-case
+          const head = nameToHead(callName) ?? callName[0].toUpperCase() + callName.slice(1)
           obj = { head, body: callArgs }
         } else {
           throw new Error(`Disallowed or invalid call: ${String(callName)}`)
