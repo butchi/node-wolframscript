@@ -286,6 +286,57 @@ export function matraToExpressionJSON(
   }
 
   const out: any[] = [head, ...args.map((a) => convVal(a))]
+  // Special-case handling for certain high-level constructs like Plot
+  // where attributes need to be turned into positional arguments or
+  // mapped to specific Option names.
+  if (head === 'Plot') {
+    // Work on a shallow copy so we can delete processed attrs
+    const a: Record<string, any> = Object.assign({}, attrs || {})
+
+    // domain: { x: ["range", [min, max]] } -> ["List", "x", min, max]
+    if (a.domain && typeof a.domain === 'object') {
+      for (const [varName, rng] of Object.entries(a.domain)) {
+        const rv = convVal(rng)
+        if (!Array.isArray(rv) || rv.length === 0 || typeof rv[0] !== 'string') continue
+        const tag = rv[0].toLowerCase()
+        // Possible shapes:
+        // ['range', [min, max]]
+        // ['range', min, max]
+        if (tag === 'range') {
+          if (rv.length === 2 && Array.isArray(rv[1]) && rv[1].length === 2) {
+            out.splice(2, 0, ['List', varName, rv[1][0], rv[1][1]])
+            delete a.domain
+            break
+          }
+          if (rv.length >= 3 && typeof rv[1] === 'number' && typeof rv[2] === 'number') {
+            out.splice(2, 0, ['List', varName, rv[1], rv[2]])
+            delete a.domain
+            break
+          }
+        }
+      }
+    }
+
+    // Map simple option keys to Wolfram option names
+    const optionNameMap: Record<string, string> = {
+      color: 'PlotStyle',
+      samples: 'PlotPoints',
+    }
+
+    for (const [k, v] of Object.entries(a)) {
+      if (k === 'domain') continue
+      const optName = optionNameMap[k] ?? k[0].toUpperCase() + k.slice(1)
+      let val = convVal(v)
+      // Convert color string like 'red' to 'Red' symbol form (capitalized)
+      if (k === 'color' && typeof val === 'string') {
+        const s = val
+        val = s.length > 0 ? s[0].toUpperCase() + s.slice(1) : s
+      }
+      out.push(['Rule', optName, val])
+    }
+    return out
+  }
+
   for (const [k, v] of Object.entries(attrs || {})) {
     out.push(['Rule', k, convVal(v)])
   }
