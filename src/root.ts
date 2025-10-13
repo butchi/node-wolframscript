@@ -1,6 +1,8 @@
 import * as func from './func.js'
 import type { Action } from './types.js'
 // Matra parser replaces previous wjs sugar
+// DEV-WATCH: touch to trigger tsc -w rebuild
+// DEV-WATCH-2: second change to confirm watch
 import { parseMatra, matraToExpressionJSON } from './matra.js'
 import { ALLOWED_NAMES, nameToHead } from './func.js'
 

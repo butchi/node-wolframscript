@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p .",
     "start": "node dist/index.js",
-    "dev": "node --watch --enable-source-maps dist/index.js",
+    "dev": "concurrently \"tsc -w -p .\" \"node --watch --enable-source-maps dist/index.js\"",
     "server:start": "sh ./scripts/start-server.sh",
     "server:stop": "sh ./scripts/stop-server.sh",
     "test": "node scripts/test-e2e.cjs"
@@ -25,6 +25,7 @@
   "devDependencies": {
     "@types/node": "^22.7.5",
     "typescript": "^5.6.3",
-    "cross-env": "^7.0.3"
+    "cross-env": "^7.0.3",
+    "concurrently": "^7.6.0"
   }
 }
