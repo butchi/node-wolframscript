@@ -43,9 +43,49 @@ const OPERATE_HEADS = ['Plus', 'Times', 'Power', 'Divide', 'Subtract', 'Sin', 'C
 const CONSTANT_HEADS = ['Pi', 'E', 'I']
 
 // Build maps
+// For a small set of numeric-friendly heads, provide a "smart" wrapper that
+// performs native JS arithmetic when all arguments are numbers, otherwise
+// falls back to returning an Expr (so it becomes a Wolfram head call).
+const numericHeads = new Set(['Plus', 'Times', 'Subtract', 'Divide', 'Power', 'Sin', 'Cos', 'Sqrt'])
+
+const makeSmart = (head: string) => {
+  const raw = operate(head)
+  return (...body: unknown[]) => {
+    const allNumbers = body.every((b) => typeof b === 'number')
+    if (!allNumbers) return raw(...body)
+
+    // All args are numbers: perform native JS operation for common heads
+    const nums = body as number[]
+    switch (head) {
+      case 'Plus':
+        return nums.reduce((a, b) => a + b, 0)
+      case 'Times':
+        return nums.reduce((a, b) => a * b, 1)
+      case 'Subtract':
+        if (nums.length === 1) return -nums[0]
+        return nums.slice(1).reduce((a, b) => a - b, nums[0])
+      case 'Divide':
+        if (nums.length === 1) return 1 / nums[0]
+        return nums.slice(1).reduce((a, b) => a / b, nums[0])
+      case 'Power':
+        if (nums.length === 0) return 1
+        return nums.slice(1).reduce((a, b) => Math.pow(a, b), nums[0])
+      case 'Sin':
+        return Math.sin(nums[0])
+      case 'Cos':
+        return Math.cos(nums[0])
+      case 'Sqrt':
+        return Math.sqrt(nums[0])
+      default:
+        return raw(...body)
+    }
+  }
+}
+
 const operateEntries = OPERATE_HEADS.map((h) => {
   const name = operateNameOverrides[h] ?? toLowerCamel(h)
-  return [name, operate(h)] as const
+  const fn = numericHeads.has(h) ? makeSmart(h) : operate(h)
+  return [name, fn] as const
 })
 
 const operateMap = Object.fromEntries(operateEntries) as Record<string, (...body: unknown[]) => Expr>
