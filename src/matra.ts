@@ -280,7 +280,7 @@ export function matraToExpressionJSON(
     ) {
       return matraToExpressionJSON(v as MatraAst, opts)
     }
-    if (Array.isArray(v)) return v.map((x) => convVal(x))
+    if (Array.isArray(v)) return ['List', ...v.map((x) => convVal(x))]
     if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, convVal(val)]))
     return v
   }
@@ -320,7 +320,6 @@ export function matraToExpressionJSON(
     // Map simple option keys to Wolfram option names
     const optionNameMap: Record<string, string> = {
       color: 'PlotStyle',
-      samples: 'PlotPoints',
     }
 
     for (const [k, v] of Object.entries(a)) {
@@ -328,6 +327,37 @@ export function matraToExpressionJSON(
       const optName = optionNameMap[k] ?? k[0].toUpperCase() + k.slice(1)
       let val = convVal(v)
       // Convert color string like 'red' to 'Red' symbol form (capitalized)
+      if (k === 'color' && typeof val === 'string') {
+        const s = val
+        val = s.length > 0 ? s[0].toUpperCase() + s.slice(1) : s
+      }
+      out.push(['Rule', optName, val])
+    }
+    return out
+  }
+
+  // Handle ListPlot: accept data via first arg or via attrs.data, map common options
+  if (head === 'ListPlot') {
+    const a: Record<string, any> = Object.assign({}, attrs || {})
+
+    // If no explicit positional data arg but attrs.data exists, insert it
+    if ((out.length === 1 || (out.length === 1 && out[1] == null)) && a.data) {
+      const dv = convVal(a.data)
+      if (dv !== undefined) {
+        out.splice(1, 0, dv)
+        delete a.data
+      }
+    }
+
+    const optionNameMap: Record<string, string> = {
+      color: 'PlotStyle',
+    }
+
+    for (const [k, v] of Object.entries(a)) {
+      // ignore 'samples' for ListPlot: not a Wolfram option
+      if (k === 'samples') continue
+      const optName = optionNameMap[k] ?? k[0].toUpperCase() + k.slice(1)
+      let val = convVal(v)
       if (k === 'color' && typeof val === 'string') {
         const s = val
         val = s.length > 0 ? s[0].toUpperCase() + s.slice(1) : s
